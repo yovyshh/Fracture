@@ -1,12 +1,17 @@
 import os
 import cv2
 import subprocess
+import concurrent.futures
+
+def extract_single_frame(video_path, middle_time, frame_path, startupinfo):
+    cmd = ["ffmpeg", "-y", "-ss", str(middle_time), "-i", video_path, "-vframes", "1", "-q:v", "2", frame_path]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=startupinfo)
+    return frame_path
 
 def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=None):
     if progress_callback:
         progress_callback(5, "Extracting keyframes (fast scene detection)...")
         
-    # Use ffprobe to get keyframes for ultra-fast scene splitting
     cmd = [
         "ffprobe", 
         "-loglevel", "error", 
@@ -33,10 +38,7 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
             parts = line.split(',')
             if len(parts) >= 1:
                 try:
-                    # Depending on ffprobe output format, pts_time is usually the first field
-                    # when print_section=0. For some formats it's `pts_time,flags`
                     pts_val = parts[0]
-                    # Sometimes the value is 'N/A' or empty
                     if pts_val and pts_val.strip() != 'N/A':
                         keyframes.append(float(pts_val.strip()))
                 except ValueError:
@@ -45,14 +47,14 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
     if not keyframes or keyframes[0] != 0.0:
         keyframes.insert(0, 0.0)
 
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0: 
-        fps = 30.0
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    total_duration = frame_count / fps if fps else 0.0
-    
-    # Append total duration so we can calculate the duration of the final scene
+    # Ultra-fast duration check using ffprobe instead of OpenCV
+    cmd_dur = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path]
+    try:
+        dur_result = subprocess.run(cmd_dur, capture_output=True, text=True, startupinfo=startupinfo, check=True)
+        total_duration = float(dur_result.stdout.strip())
+    except:
+        total_duration = 0.0
+        
     if keyframes[-1] < total_duration:
         keyframes.append(total_duration)
     
@@ -61,24 +63,20 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
         os.makedirs(output_dir)
         
     total_scenes = len(keyframes) - 1
+    tasks = []
     
-    for i in range(total_scenes):
-        start_time = keyframes[i]
-        end_time = keyframes[i+1]
-        duration = end_time - start_time
-        
-        if duration < 0.1:
-            continue
+    # Multithreaded FFmpeg extraction to completely bypass OpenCV's slow sequential decoding
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        for i in range(total_scenes):
+            start_time = keyframes[i]
+            end_time = keyframes[i+1]
+            duration = end_time - start_time
             
-        middle_time = start_time + (duration / 2)
-        middle_frame = int(middle_time * fps)
-        
-        cap.set(cv2.CAP_PROP_POS_FRAMES, middle_frame)
-        ret, frame = cap.read()
-        
-        if ret:
+            if duration < 0.1:
+                continue
+                
+            middle_time = start_time + (duration / 2)
             frame_path = os.path.join(output_dir, f"scene_{i:04d}.jpg")
-            cv2.imwrite(frame_path, frame)
             
             scenes_data.append({
                 'id': i,
@@ -88,9 +86,15 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
                 'frame_path': frame_path
             })
             
-        if progress_callback:
-            progress = 10 + int((i + 1) / total_scenes * 40)
-            progress_callback(progress, f"Extracting frame {i+1}/{total_scenes}...")
+            tasks.append((i, executor.submit(extract_single_frame, video_path, middle_time, frame_path, startupinfo)))
             
-    cap.release()
+        completed = 0
+        total_tasks = len(tasks)
+        for i, future in tasks:
+            future.result()
+            completed += 1
+            if progress_callback:
+                progress = 10 + int((completed) / total_tasks * 40)
+                progress_callback(progress, f"Extracting frame {completed}/{total_tasks}...")
+            
     return scenes_data
