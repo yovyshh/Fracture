@@ -5,15 +5,19 @@
 ## Features
 
 - **Blazing Fast Keyframe Extraction**: Bypasses traditional frame-by-frame decoding overhead. Fracture uses `ffprobe` to directly extract and analyze I-frames, making video parsing nearly instantaneous.
-- **AI-Powered Scene Clustering**: Leverages Hugging Face's `sentence-transformers` (`clip-ViT-B-32`) and Scikit-Learn's KMeans algorithm to intelligently group similar scenes into distinct, color-coded clusters based on visual semantics.
-- **Ultra-Modern UI/UX**: Built with a sleek, minimalist dark theme featuring Electric Violet accents, pill-shaped geometry, glowing drop shadows, buttery smooth 60 FPS pixel-scrolling, and a dynamic binary ambient background running at near-zero CPU cost.
+- **AI-Powered Scene Clustering**: Leverages Hugging Face's `sentence-transformers` (`clip-ViT-B-32`) and Scikit-Learn's DBSCAN algorithm to intelligently group similar scenes into distinct, color-coded clusters based on visual semantics — no need to pre-define the number of clusters.
+- **Configurable Clustering Parameters**: Adjust DBSCAN's epsilon (neighborhood radius) and minimum samples directly from the Settings panel to fine-tune scene grouping sensitivity.
+- **Ultra-Modern UI/UX**: Built with a sleek, minimalist dark/light theme with pill-shaped geometry, buttery smooth pixel-scrolling, and a clean responsive layout.
 - **Drag-and-Drop Timeline**: A fully interactive timeline queue that allows you to curate, reorder, and seamlessly delete clips with custom inline UI controls or simple keyboard shortcuts.
+- **Non-Blocking Export**: Merging and exporting happens in a background thread — no UI freeze, with live progress feedback.
 - **Lossless Export**: Uses FFmpeg's `concat` demuxer to merge your curated timeline selections into a final master video without any quality degradation or re-encoding penalties.
+- **Model Caching**: The CLIP model is loaded once and shared across analyses — subsequent video imports skip the download delay.
+- **Hover Preview**: Hover over any scene thumbnail to see a live video preview of that clip.
 
 ## Technology Stack
 
 - **GUI & Frontend**: PyQt6
-- **Video & Computer Vision**: OpenCV (`cv2`), `ffmpeg-python`, `ffprobe`
+- **Video & Computer Vision**: OpenCV (`cv2`), FFmpeg, `ffprobe`
 - **Machine Learning**: `sentence-transformers`, `scikit-learn`
 - **OS Compatibility**: Fully optimized for Windows environments (invisible background subprocess handling)
 
@@ -21,5 +25,20 @@
 
 1. **Import Video**: Click the import button to load your `.mp4`, `.mkv`, `.avi`, or `.mov` file.
 2. **Analysis**: Fracture will silently extract and cluster the keyframes in the background, displaying the results in the Media Pool.
-3. **Curate Timeline**: Drag your desired clusters from the Media Pool down to the Timeline Queue. Right-click or use the inline 'X' button to remove scenes.
-4. **Export**: Hit 'Merge & Export' to instantly stitch your selections together into a final, lossless output file.
+3. **Tune Settings** (optional): Open Settings to adjust cluster sensitivity (epsilon) and minimum samples per cluster.
+4. **Curate Timeline**: Drag your desired clusters from the Media Pool down to the Timeline Queue. Right-click or use the inline 'X' button to remove scenes.
+5. **Export**: Hit 'Merge & Export' to stitch your selections together into a final, lossless output file.
+
+## Project Structure
+
+```
+Fracture/
+├── main.py               # Application entry point
+├── ui_components.py       # PyQt6 UI: windows, workers, widgets
+├── video_processor.py     # FFprobe scene detection + frame extraction
+├── ml_engine.py           # CLIP embeddings + DBSCAN clustering
+├── exporter.py            # FFmpeg concat-based lossless export
+├── icons/                 # UI icons and assets
+├── venv/                  # Python virtual environment
+└── README.md
+```

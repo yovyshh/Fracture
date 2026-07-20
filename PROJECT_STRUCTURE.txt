@@ -1,0 +1,37 @@
+# Project Structure Overview: Fracture
+
+Fracture is an AI-powered desktop video editing assistant. Below is the documentation of the project structure and its components.
+
+## Project Structure
+
+```text
+VideoClassifier/
+├── icons/                # UI icons and assets
+├── venv/                 # Python virtual environment
+├── .gitignore            # Files to be ignored by git
+├── exporter.py           # Handles video merging and lossless export
+├── Fracture.vbs         # Windows entry point for invisible subprocess handling
+├── main.py               # Application entry point (PyQt6)
+├── ml_engine.py          # AI Logic: Embeddings, DBSCAN clustering
+├── ui_components.py      # Custom PyQt6 widgets and UI layout
+├── video_processor.py    # OpenCV and ffprobe frame analysis logic
+└── README.md             # Project documentation
+```
+
+## Component Diagrams
+
+### 1. High-Level Architecture
+[User] <-> [GUI (ui_components.py / main.py)] <-> [Logic Layer (ml_engine.py / video_processor.py)] <-> [Media/System (FFmpeg / OpenCV / Disk)]
+
+### 2. Data Flow
+1. Import: video_processor.py uses ffprobe to extract I-frames.
+2. Analysis: ml_engine.py encodes frames using sentence-transformers and clusters them via DBSCAN.
+3. Interaction: ui_components.py displays clusters in the Media Pool.
+4. Export: exporter.py uses ffmpeg-python to concatenate selected clips.
+
+## Module Responsibilities
+- main.py: Initializes the QApplication and shows the MainWindow.
+- ml_engine.py: Manages the lifecycle of the AI model and performs scene clustering.
+- ui_components.py: Defines the "Electric Violet" dark-mode UI and timeline widgets.
+- video_processor.py: Handles the heavy lifting of video decoding and frame extraction.
+- exporter.py: Handles the final lossless concatenation of video files.
