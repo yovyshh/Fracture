@@ -1,6 +1,7 @@
 import os
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
 from PIL import Image
 
 class MLEngine:
@@ -23,22 +24,30 @@ class MLEngine:
         if progress_callback:
             progress_callback(70, "Computing embeddings...")
 
-        images = [Image.open(scene['frame_path']) for scene in scenes_data]
-        embeddings = self.model.encode(images, batch_size=8, show_progress_bar=False)
+        # Process images in chunks to manage memory efficiently
+        chunk_size = 32
+        all_embeddings = []
+        
+        for i in range(0, len(scenes_data), chunk_size):
+            chunk = scenes_data[i : i + chunk_size]
+            chunk_images = [Image.open(scene['frame_path']) for scene in chunk]
+            chunk_embeddings = self.model.encode(chunk_images, batch_size=8, show_progress_bar=False)
+            all_embeddings.append(chunk_embeddings)
+            
+        import numpy as np
+        embeddings = np.vstack(all_embeddings)
 
         if progress_callback:
             progress_callback(90, "Clustering scenes...")
 
-        n_clusters = min(n_clusters, len(scenes_data))
-        if n_clusters <= 1:
-            for scene in scenes_data:
-                scene['cluster'] = 0
-            if progress_callback:
-                progress_callback(100, "Analysis complete!")
-            return scenes_data
-            
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
-        clusters = kmeans.fit_predict(embeddings)
+        # Use DBSCAN for more natural scene clustering (no need to pre-define cluster count)
+        # Standardize embeddings for better DBSCAN performance
+        scaler = StandardScaler()
+        scaled_embeddings = scaler.fit_transform(embeddings)
+        
+        # eps and min_samples are heuristic defaults; these could be moved to a config file
+        dbscan = DBSCAN(eps=0.5, min_samples=2, metric='euclidean')
+        clusters = dbscan.fit_predict(scaled_embeddings)
 
         for i, scene in enumerate(scenes_data):
             scene['cluster'] = int(clusters[i])

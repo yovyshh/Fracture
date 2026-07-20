@@ -2,13 +2,31 @@ import os
 import cv2
 import subprocess
 import concurrent.futures
+import threading
+
+# Limit concurrent ffmpeg processes to prevent OS overhead
+ffmpeg_semaphore = threading.Semaphore(4)
+
+def check_dependencies():
+    """Check if ffmpeg and ffprobe are available in the system path."""
+    try:
+        subprocess.run(["ffprobe", "-version"], capture_output=True, check=True)
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 def extract_single_frame(video_path, middle_time, frame_path, startupinfo):
-    cmd = ["ffmpeg", "-y", "-ss", str(middle_time), "-i", video_path, "-vframes", "1", "-q:v", "2", frame_path]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=startupinfo)
-    return frame_path
+    with ffmpeg_semaphore:
+        cmd = ["ffmpeg", "-y", "-ss", str(middle_time), "-i", video_path, "-vframes", "1", "-q:v", "2", frame_path]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=startupinfo)
+        return frame_path
 
 def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=None):
+    # Check dependencies first
+    if not check_dependencies():
+        return [], "System Error: FFmpeg or FFprobe was not found in the system PATH. Please install FFmpeg and ensure it is added to your PATH environment variable."
+
     if progress_callback:
         progress_callback(5, "Extracting keyframes (fast scene detection)...")
         
@@ -29,8 +47,9 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo, check=True)
     except subprocess.CalledProcessError as e:
-        print("ffprobe error:", e.stderr)
-        return []
+        return [], f"FFprobe error: {e.stderr}"
+    except FileNotFoundError:
+        return [], "System Error: ffprobe executable not found."
         
     keyframes = []
     for line in result.stdout.splitlines():
@@ -63,6 +82,9 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
         os.makedirs(output_dir)
         
     total_scenes = len(keyframes) - 1
+    if total_scenes == 0:
+        return [], "No keyframes detected in video. Please check the video format."
+
     tasks = []
     
     # Multithreaded FFmpeg extraction to completely bypass OpenCV's slow sequential decoding
@@ -90,11 +112,17 @@ def detect_scenes_and_extract_frames(video_path, output_dir, progress_callback=N
             
         completed = 0
         total_tasks = len(tasks)
+        if total_tasks == 0:
+            return [], "No valid scenes found for extraction."
+
         for i, future in tasks:
-            future.result()
-            completed += 1
-            if progress_callback:
-                progress = 10 + int((completed) / total_tasks * 40)
-                progress_callback(progress, f"Extracting frame {completed}/{total_tasks}...")
+            try:
+                future.result()
+                completed += 1
+                if progress_callback:
+                    progress = 10 + int((completed) / total_tasks * 40)
+                    progress_callback(progress, f"Extracting frame {completed}/{total_tasks}...")
+            except Exception as e:
+                return [], f"Extraction error: {str(e)}"
             
     return scenes_data

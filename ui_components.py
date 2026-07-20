@@ -440,19 +440,6 @@ class MainWindow(QMainWindow):
         self.import_btn.setObjectName("PrimaryButton")
         self.import_btn.clicked.connect(self.import_video)
         
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.VLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet("border-left: 1px solid #3F3F46;")
-        
-        self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Paste URL (YouTube, Vimeo, etc.) to Download...")
-        self.url_input.setFixedWidth(350)
-        
-        self.download_btn = QPushButton("Fetch URL")
-        self.download_btn.setObjectName("SecondaryButton")
-        self.download_btn.clicked.connect(self.download_video)
-        
         self.settings_btn = QPushButton("⚙ Settings")
         self.settings_btn.setObjectName("SettingsButton")
         self.settings_btn.clicked.connect(self.open_settings)
@@ -463,9 +450,6 @@ class MainWindow(QMainWindow):
         self.export_btn.setEnabled(False)
         
         toolbar_layout.addWidget(self.import_btn)
-        toolbar_layout.addWidget(separator)
-        toolbar_layout.addWidget(self.url_input)
-        toolbar_layout.addWidget(self.download_btn)
         toolbar_layout.addStretch()
         toolbar_layout.addWidget(self.settings_btn)
         toolbar_layout.addWidget(self.export_btn)
@@ -590,7 +574,6 @@ class MainWindow(QMainWindow):
     def start_analysis(self):
         self.import_btn.setEnabled(False)
         self.export_btn.setEnabled(False)
-        self.download_btn.setEnabled(False)
         self.settings_btn.setEnabled(False)
         
         self.progress_bar.setValue(0)
@@ -629,15 +612,12 @@ class MainWindow(QMainWindow):
         self.progress_bar.hide()
         self.status_label.setText(" Analysis complete. Ready.")
         self.import_btn.setEnabled(True)
-        self.download_btn.setEnabled(True)
         self.settings_btn.setEnabled(True)
 
     def on_analysis_error(self, error_msg):
         self.progress_bar.hide()
         self.status_label.setText(" Error during execution.")
         self.import_btn.setEnabled(True)
-        self.download_btn.setEnabled(True)
-        self.url_input.setEnabled(True)
         self.settings_btn.setEnabled(True)
         PremiumNotification("System Error", str(error_msg), is_error=True, parent=self, is_dark_mode=self.is_dark_mode).exec()
 
