@@ -4,13 +4,13 @@ import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { cn } from "@/lib/utils";
 
-/** Stagger-fade children on mount (GSAP). */
+/** Stagger-fade children on mount (GSAP) — never leaves nodes unclickable. */
 export function StaggerIn({
   children,
   className,
-  y = 18,
-  stagger = 0.06,
-  delay = 0.05,
+  y = 14,
+  stagger = 0.05,
+  delay = 0.04,
 }: {
   children: React.ReactNode;
   className?: string;
@@ -27,15 +27,18 @@ export function StaggerIn({
     const ctx = gsap.context(() => {
       gsap.fromTo(
         items,
-        { autoAlpha: 0, y },
+        { opacity: 0, y },
         {
-          autoAlpha: 1,
+          opacity: 1,
           y: 0,
-          duration: 0.55,
+          duration: 0.45,
           stagger,
           delay,
           ease: "power3.out",
-          clearProps: "transform",
+          clearProps: "transform,opacity",
+          onComplete: () => {
+            gsap.set(items, { clearProps: "all" });
+          },
         }
       );
     }, el);
@@ -49,7 +52,7 @@ export function StaggerIn({
   );
 }
 
-/** Soft page enter wrapper. */
+/** Soft page enter — opacity only (no visibility:hidden). */
 export function PageEnter({
   children,
   className,
@@ -64,13 +67,16 @@ export function PageEnter({
     const ctx = gsap.context(() => {
       gsap.fromTo(
         el,
-        { autoAlpha: 0, y: 12, filter: "blur(6px)" },
+        { opacity: 0, y: 10 },
         {
-          autoAlpha: 1,
+          opacity: 1,
           y: 0,
-          filter: "blur(0px)",
-          duration: 0.55,
+          duration: 0.45,
           ease: "power3.out",
+          clearProps: "transform,opacity",
+          onComplete: () => {
+            gsap.set(el, { clearProps: "all" });
+          },
         }
       );
     }, el);

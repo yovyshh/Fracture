@@ -36,14 +36,13 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          "var(--font-geist-sans)",
-          "Inter",
-          "SF Pro Display",
-          "system-ui",
-          "sans-serif",
+          "var(--font-jetbrains)",
+          "JetBrains Mono",
+          "ui-monospace",
+          "monospace",
         ],
         mono: [
-          "var(--font-geist-mono)",
+          "var(--font-jetbrains)",
           "JetBrains Mono",
           "ui-monospace",
           "monospace",

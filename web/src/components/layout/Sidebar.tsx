@@ -2,122 +2,148 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import {
-  LayoutDashboard,
+  Home,
   Upload,
-  Layers3,
   Clapperboard,
-  Database,
-  ChartLine,
-  Cpu,
-  GraduationCap,
+  Layers3,
   Settings,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Minimal SpotiFLAC-style rail — icons only. */
 const NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Home", icon: Home },
   { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/classification", label: "Classification", icon: Layers3 },
+  { href: "/classification", label: "Classify", icon: Layers3 },
   { href: "/results", label: "Results", icon: Clapperboard },
-  { href: "/dataset", label: "Dataset", icon: Database },
-  { href: "/analytics", label: "Analytics", icon: ChartLine },
-  { href: "/models", label: "Models", icon: Cpu },
-  { href: "/training", label: "Training", icon: GraduationCap },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [expanded, setExpanded] = useState(true);
   const railRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const el = railRef.current;
     if (!el) return;
-    gsap.fromTo(
-      el,
-      { x: -20, autoAlpha: 0 },
-      { x: 0, autoAlpha: 1, duration: 0.55, ease: "power3.out" }
-    );
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        el.querySelectorAll("[data-nav-item]"),
+        { autoAlpha: 0, y: 10, scale: 0.9 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.4,
+          stagger: 0.05,
+          ease: "back.out(1.6)",
+          delay: 0.08,
+        }
+      );
+    }, el);
+    return () => ctx.revert();
   }, []);
 
   return (
     <aside
       ref={railRef}
-      className={cn(
-        "relative z-30 flex h-screen flex-col border-r border-line bg-surface/70 backdrop-blur-2xl transition-[width] duration-300 ease-out",
-        expanded ? "w-[248px]" : "w-[76px]"
-      )}
+      className="relative z-40 flex h-screen w-[64px] shrink-0 flex-col items-center border-r border-white/[0.06] bg-[#0c0c0e] py-5"
     >
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-4 pb-2 pt-6">
-        <div className="relative grid h-10 w-10 place-items-center rounded-2xl bg-accent-soft ring-1 ring-accent/30 shadow-glow">
-          <span className="text-sm font-bold tracking-tight text-accent-hi">F</span>
-          <span className="pointer-events-none absolute inset-0 rounded-2xl bg-accent/20 blur-md" />
-        </div>
-        {expanded && (
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold tracking-tight text-ink">
-              Fracture
-            </div>
-            <div className="truncate text-[11px] text-ink-mute">Video Classifier</div>
-          </div>
-        )}
-      </div>
-
-      {/* Nav */}
-      <nav className="mt-6 flex flex-1 flex-col gap-1 px-3">
+      {/* Icon rail only — no brand wordmark */}
+      <nav className="flex flex-1 flex-col items-center gap-2 pt-2">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active =
             href === "/"
               ? pathname === "/"
-              : pathname === href || pathname.startsWith(href + "/");
+              : pathname === href || pathname.startsWith(`${href}/`);
+
           return (
             <Link
               key={href}
               href={href}
+              data-nav-item
+              title={label}
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all duration-200",
+                "group relative grid h-11 w-11 place-items-center rounded-2xl transition-colors duration-200",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                 active
-                  ? "bg-accent-soft text-ink shadow-[inset_0_0_0_1px_rgba(124,58,237,0.25)]"
-                  : "text-ink-soft hover:bg-white/[0.03] hover:text-ink"
+                  ? "bg-accent text-white shadow-[0_0_24px_rgba(124,58,237,0.35)]"
+                  : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-100"
               )}
+              onMouseEnter={(e) => {
+                const icon = e.currentTarget.querySelector("[data-icon]");
+                const tip = e.currentTarget.querySelector("[data-tip]");
+                if (icon) {
+                  gsap.fromTo(
+                    icon,
+                    { scale: 1, rotate: 0 },
+                    {
+                      scale: 1.18,
+                      rotate: active ? 0 : -8,
+                      duration: 0.28,
+                      ease: "back.out(2.5)",
+                      yoyo: true,
+                      repeat: 1,
+                      yoyoEase: "power2.inOut",
+                    }
+                  );
+                }
+                if (tip) {
+                  gsap.fromTo(
+                    tip,
+                    { autoAlpha: 0, x: -6, scale: 0.92 },
+                    {
+                      autoAlpha: 1,
+                      x: 0,
+                      scale: 1,
+                      duration: 0.22,
+                      ease: "power3.out",
+                    }
+                  );
+                }
+              }}
+              onMouseLeave={(e) => {
+                const icon = e.currentTarget.querySelector("[data-icon]");
+                const tip = e.currentTarget.querySelector("[data-tip]");
+                if (icon) gsap.to(icon, { scale: 1, rotate: 0, duration: 0.2 });
+                if (tip) {
+                  gsap.to(tip, {
+                    autoAlpha: 0,
+                    x: -4,
+                    duration: 0.15,
+                    ease: "power2.in",
+                  });
+                }
+              }}
             >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
-              )}
-              <Icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110",
-                  active ? "text-accent-hi" : "text-ink-mute group-hover:text-ink"
-                )}
-              />
-              {expanded && <span className="truncate font-medium">{label}</span>}
+              <span data-icon className="inline-flex">
+                <Icon className="h-[20px] w-[20px]" strokeWidth={active ? 2.25 : 1.85} />
+              </span>
+
+              {/* Hover label chip (SpotiFLAC-style flyout) */}
+              <span
+                data-tip
+                className="pointer-events-none absolute left-[calc(100%+10px)] z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[#16161a] px-2.5 py-1 text-[11px] font-medium text-zinc-100 opacity-0 shadow-lg"
+              >
+                {label}
+              </span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Collapse */}
-      <div className="border-t border-line p-3">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-elevated/60 px-3 py-2 text-xs text-ink-soft transition hover:border-line-strong hover:text-ink"
-        >
-          {expanded ? (
-            <>
-              <ChevronLeft className="h-4 w-4" /> Collapse
-            </>
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </button>
+      {/* Tiny mark at bottom — icon only */}
+      <div
+        data-nav-item
+        className="mb-1 grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-[12px] font-bold text-accent-hi ring-1 ring-accent/25"
+        aria-hidden
+      >
+        F
       </div>
     </aside>
   );
