@@ -17,7 +17,6 @@
   <a href="https://github.com/yovyshh/Fracture"><img src="https://img.shields.io/badge/GitHub-yovyshh%2FFracture-0047FF?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"></a>
   <a href="#stack"><img src="https://img.shields.io/badge/Stack-Python%20%7C%20PyQt6%20%7C%20CLIP-111111?style=for-the-badge" alt="Stack"></a>
-  <a href="#license"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License: MIT"></a>
   <a href="#pipeline"><img src="https://img.shields.io/badge/AI-CLIP%20%2B%20DBSCAN-a855f7?style=for-the-badge" alt="AI"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Mode-Offline%20%2F%20Local-f59e0b?style=for-the-badge" alt="Offline"></a>
 </p>
@@ -232,12 +231,6 @@ Keep FFmpeg on PATH for the packaged app as well.
 | Python 3.14 + broken numpy | Prefer 3.11/3.12 venv; rebuild wheels for your interpreter |
 
 Logs: `~/.fracture/fracture.log` (Windows: `%USERPROFILE%\.fracture\fracture.log`).
-
----
-
-## License
-
-MIT — free to use, modify, and ship. See [`LICENSE`](./LICENSE) if present; otherwise treat as MIT unless noted.
 
 ---
 
