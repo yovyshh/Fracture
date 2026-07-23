@@ -2,133 +2,98 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
-import { gsap } from "@/lib/gsap";
+import { useRef, useState } from "react";
+import { gsap, useGSAP } from "@/lib/gsap";
 import {
-  Home,
-  Upload,
-  Clapperboard,
-  Layers3,
+  LayoutDashboard,
+  FolderKanban,
+  Sparkles,
+  ChartColumn,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Minimal SpotiFLAC-style rail — icons only. */
+/** Exactly five destinations — no trees, no clutter. */
 const NAV = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/classification", label: "Classify", icon: Layers3 },
-  { href: "/results", label: "Results", icon: Clapperboard },
+  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/inference", label: "Inference", icon: Sparkles },
+  { href: "/analytics", label: "Analytics", icon: ChartColumn },
   { href: "/settings", label: "Settings", icon: Settings },
-];
+] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [expanded, setExpanded] = useState(false);
   const railRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
-    const el = railRef.current;
-    if (!el) return;
-    const ctx = gsap.context(() => {
+  useGSAP(
+    () => {
       gsap.fromTo(
-        el.querySelectorAll("[data-nav-item]"),
-        { autoAlpha: 0, y: 10, scale: 0.9 },
-        {
-          autoAlpha: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.4,
-          stagger: 0.05,
-          ease: "back.out(1.6)",
-          delay: 0.08,
-        }
+        railRef.current,
+        { opacity: 0, x: -12 },
+        { opacity: 1, x: 0, duration: 0.45, ease: "power3.out", clearProps: "transform,opacity" }
       );
-    }, el);
-    return () => ctx.revert();
-  }, []);
+    },
+    { scope: railRef }
+  );
 
   return (
     <aside
       ref={railRef}
-      className="relative z-40 flex h-screen w-[64px] shrink-0 flex-col items-center border-r border-white/[0.06] bg-[#0c0c0e] py-5"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className={cn(
+        "relative z-40 flex h-screen shrink-0 flex-col border-r border-line bg-surface/80 backdrop-blur-xl transition-[width] duration-300 ease-out",
+        expanded ? "w-[200px]" : "w-[68px]"
+      )}
     >
-      {/* Icon rail only — no brand wordmark */}
-      <nav className="flex flex-1 flex-col items-center gap-2 pt-2">
+      {/* Mark only — no product essay */}
+      <div className="flex h-14 items-center gap-3 px-4 pt-2">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-accent text-sm font-semibold text-white shadow-glow">
+          F
+        </div>
+        <span
+          className={cn(
+            "truncate text-[13px] font-semibold tracking-tight text-ink transition-opacity duration-200",
+            expanded ? "opacity-100" : "opacity-0"
+          )}
+        >
+          Fracture
+        </span>
+      </div>
+
+      <nav className="mt-4 flex flex-1 flex-col gap-1 px-2.5">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active =
             href === "/"
               ? pathname === "/"
               : pathname === href || pathname.startsWith(`${href}/`);
-
           return (
             <Link
               key={href}
               href={href}
-              data-nav-item
               title={label}
-              aria-label={label}
-              aria-current={active ? "page" : undefined}
               className={cn(
-                "group relative grid h-11 w-11 place-items-center rounded-2xl transition-colors duration-200",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+                "group flex h-11 items-center gap-3 rounded-[14px] px-2.5 text-[13px] font-medium transition-colors duration-200",
                 active
-                  ? "bg-accent text-white shadow-[0_0_24px_rgba(124,58,237,0.35)]"
-                  : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-100"
+                  ? "bg-accent-soft text-ink"
+                  : "text-ink-mute hover:bg-white/[0.04] hover:text-ink"
               )}
-              onMouseEnter={(e) => {
-                const icon = e.currentTarget.querySelector("[data-icon]");
-                const tip = e.currentTarget.querySelector("[data-tip]");
-                if (icon) {
-                  gsap.fromTo(
-                    icon,
-                    { scale: 1, rotate: 0 },
-                    {
-                      scale: 1.18,
-                      rotate: active ? 0 : -8,
-                      duration: 0.28,
-                      ease: "back.out(2.5)",
-                      yoyo: true,
-                      repeat: 1,
-                      yoyoEase: "power2.inOut",
-                    }
-                  );
-                }
-                if (tip) {
-                  gsap.fromTo(
-                    tip,
-                    { autoAlpha: 0, x: -6, scale: 0.92 },
-                    {
-                      autoAlpha: 1,
-                      x: 0,
-                      scale: 1,
-                      duration: 0.22,
-                      ease: "power3.out",
-                    }
-                  );
-                }
-              }}
-              onMouseLeave={(e) => {
-                const icon = e.currentTarget.querySelector("[data-icon]");
-                const tip = e.currentTarget.querySelector("[data-tip]");
-                if (icon) gsap.to(icon, { scale: 1, rotate: 0, duration: 0.2 });
-                if (tip) {
-                  gsap.to(tip, {
-                    autoAlpha: 0,
-                    x: -4,
-                    duration: 0.15,
-                    ease: "power2.in",
-                  });
-                }
-              }}
             >
-              <span data-icon className="inline-flex">
-                <Icon className="h-[20px] w-[20px]" strokeWidth={active ? 2.25 : 1.85} />
-              </span>
-
-              {/* Hover label chip (SpotiFLAC-style flyout) */}
               <span
-                data-tip
-                className="pointer-events-none absolute left-[calc(100%+10px)] z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[#16161a] px-2.5 py-1 text-[11px] font-medium text-zinc-100 opacity-0 shadow-lg"
+                className={cn(
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-[10px] transition-transform duration-200 group-hover:scale-105",
+                  active ? "bg-accent text-white" : "text-ink-soft"
+                )}
+              >
+                <Icon className="h-[17px] w-[17px]" strokeWidth={active ? 2.2 : 1.8} />
+              </span>
+              <span
+                className={cn(
+                  "truncate transition-opacity duration-200",
+                  expanded ? "opacity-100" : "opacity-0"
+                )}
               >
                 {label}
               </span>
@@ -136,15 +101,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      {/* Tiny mark at bottom — icon only */}
-      <div
-        data-nav-item
-        className="mb-1 grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-[12px] font-bold text-accent-hi ring-1 ring-accent/25"
-        aria-hidden
-      >
-        F
-      </div>
     </aside>
   );
 }

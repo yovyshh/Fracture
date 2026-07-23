@@ -1,200 +1,191 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageEnter } from "@/components/motion/Reveal";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import {
+  useTheme,
+  type AccentId,
+  type ThemeMode,
+} from "@/components/providers/ThemeProvider";
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<"general" | "clustering" | "export" | "status">(
-    "general"
-  );
+  const { mode, accent, setMode, setAccent } = useTheme();
   const [eps, setEps] = useState(0.35);
-  const [minSamples, setMinSamples] = useState(2);
   const [accurate, setAccurate] = useState(false);
-  const [accent, setAccent] = useState("violet");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [apiStatus, setApiStatus] = useState("…");
 
-  const tabs = [
-    { id: "general", label: "General" },
-    { id: "clustering", label: "Clustering" },
-    { id: "export", label: "Export" },
-    { id: "status", label: "Status" },
-  ] as const;
+  useEffect(() => {
+    api
+      .health()
+      .then((h) =>
+        setApiStatus(
+          h.ok
+            ? `OK · FFmpeg ${h.ffmpeg ? "yes" : "no"} · model ${h.model_ready ? "ready" : "loading"}`
+            : "Down"
+        )
+      )
+      .catch(() => setApiStatus(`Offline (${api.base})`));
+  }, []);
+
+  async function save() {
+    try {
+      await api.setSettings({
+        eps,
+        min_samples: 2,
+        accurate_export: accurate,
+        theme: mode,
+        accent,
+      });
+      setMsg("Saved");
+    } catch {
+      setMsg("Theme saved in browser · API offline");
+    }
+  }
 
   return (
-    <PageEnter className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-2">
-          <Badge tone="mute">Preferences</Badge>
-          <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-ink-soft">
-            Tune clustering, export fidelity, and appearance.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary">Reset</Button>
-          <Button>Save changes</Button>
-        </div>
+    <PageEnter className="mx-auto max-w-xl space-y-8">
+      <header>
+        <h1 className="text-[32px] font-semibold tracking-tight">Settings</h1>
+        <p className="mt-2 text-[14px] text-ink-soft">
+          Appearance and inference preferences.
+        </p>
       </header>
 
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "rounded-2xl px-4 py-2 text-sm font-medium transition",
-              tab === t.id
-                ? "bg-accent text-white shadow-glow"
-                : "border border-line bg-elevated/40 text-ink-soft hover:text-ink"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "general" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>General</CardTitle>
-            <CardDescription>Theme and accent</CardDescription>
-          </CardHeader>
-          <CardContent className="grid max-w-xl gap-5">
-            <Field label="Accent">
-              <select
-                value={accent}
-                onChange={(e) => setAccent(e.target.value)}
-                className="h-11 w-full rounded-2xl border border-line bg-elevated/50 px-3 text-sm outline-none focus:border-accent/40"
-              >
-                <option value="violet">Violet</option>
-                <option value="blue">Blue</option>
-                <option value="green">Green</option>
-              </select>
-            </Field>
-            <Field label="Motion">
-              <label className="flex items-center justify-between rounded-2xl border border-line bg-elevated/40 px-4 py-3 text-sm">
-                Enable GSAP transitions
-                <input type="checkbox" defaultChecked className="accent-accent h-4 w-4" />
-              </label>
-            </Field>
-          </CardContent>
-        </Card>
+      {msg && (
+        <div className="rounded-[16px] border border-success/25 bg-success/10 px-4 py-3 text-[13px] text-success">
+          {msg}
+        </div>
       )}
 
-      {tab === "clustering" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Clustering</CardTitle>
-            <CardDescription>DBSCAN on L2-normalized CLIP embeddings</CardDescription>
-          </CardHeader>
-          <CardContent className="grid max-w-xl gap-6">
-            <Field label={`Epsilon · ${eps.toFixed(2)}`}>
-              <input
-                type="range"
-                min={0.05}
-                max={1.5}
-                step={0.05}
-                value={eps}
-                onChange={(e) => setEps(Number(e.target.value))}
-                className="w-full accent-[#7C3AED]"
-              />
-            </Field>
-            <Field label={`Min samples · ${minSamples}`}>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={1}
-                value={minSamples}
-                onChange={(e) => setMinSamples(Number(e.target.value))}
-                className="w-full accent-[#7C3AED]"
-              />
-            </Field>
-            <Button variant="secondary">Recluster with cached embeddings</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {tab === "export" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Export</CardTitle>
-            <CardDescription>Lossless mux vs accurate cuts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <label className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-elevated/40 px-4 py-4">
-              <div>
-                <div className="text-sm font-medium">Accurate export</div>
-                <div className="text-xs text-ink-mute">
-                  Re-encode boundaries for frame-perfect cuts (slower)
-                </div>
-              </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Theme</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex gap-2">
+            {(["dark", "light"] as ThemeMode[]).map((m) => (
               <button
+                key={m}
                 type="button"
-                onClick={() => setAccurate((v) => !v)}
+                onClick={() => {
+                  setMode(m);
+                  setMsg(null);
+                }}
                 className={cn(
-                  "relative h-7 w-12 rounded-full transition",
-                  accurate ? "bg-accent" : "bg-white/10"
+                  "h-11 flex-1 rounded-[14px] border text-[13px] font-medium capitalize transition",
+                  mode === m
+                    ? "border-accent bg-accent text-white"
+                    : "border-line bg-elevated/40 text-ink-soft hover:border-line-strong"
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(
+              [
+                ["violet", "#7C3AED"],
+                ["blue", "#3B82F6"],
+                ["green", "#22C55E"],
+                ["amber", "#F59E0B"],
+              ] as [AccentId, string][]
+            ).map(([id, color]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setAccent(id);
+                  setMsg(null);
+                }}
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-[14px] border text-[12px] font-medium capitalize",
+                  accent === id
+                    ? "border-accent bg-accent-soft"
+                    : "border-line bg-elevated/40"
                 )}
               >
                 <span
-                  className={cn(
-                    "absolute top-0.5 h-6 w-6 rounded-full bg-white transition",
-                    accurate ? "left-5" : "left-0.5"
-                  )}
+                  className="h-3 w-3 rounded-full"
+                  style={{ background: color }}
                 />
+                {id}
               </button>
-            </label>
-          </CardContent>
-        </Card>
-      )}
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-      {tab === "status" && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["FFmpeg", "OK"],
-            ["AI model", "Ready"],
-            ["API", "http://127.0.0.1:8765"],
-            ["UI", "Next.js 15"],
-          ].map(([k, v]) => (
-            <Card key={k}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs uppercase tracking-wider text-ink-mute">
-                  {k}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-lg font-semibold">{v}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Inference</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <label className="block space-y-2">
+            <span className="text-[13px] text-ink-soft">
+              Cluster epsilon · {eps.toFixed(2)}
+            </span>
+            <input
+              type="range"
+              min={0.05}
+              max={1.5}
+              step={0.05}
+              value={eps}
+              onChange={(e) => setEps(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "var(--accent)" }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setAccurate((v) => !v)}
+            className="flex w-full items-center justify-between rounded-[16px] border border-line bg-elevated/30 px-4 py-3 text-left"
+          >
+            <div>
+              <div className="text-[13px] font-medium">Accurate export</div>
+              <div className="text-[12px] text-ink-mute">Frame-perfect cuts</div>
+            </div>
+            <span
+              className={cn(
+                "relative h-7 w-12 rounded-full transition",
+                accurate ? "bg-accent" : "bg-white/10"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 h-6 w-6 rounded-full bg-white transition",
+                  accurate ? "left-5" : "left-0.5"
+                )}
+              />
+            </span>
+          </button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>System</CardTitle>
+        </CardHeader>
+        <CardContent className="text-[13px] text-ink-soft">
+          <div className="flex justify-between gap-4 border-b border-line py-3">
+            <span className="text-ink-mute">Model</span>
+            <span>clip-ViT-B-32</span>
+          </div>
+          <div className="flex justify-between gap-4 py-3">
+            <span className="text-ink-mute">API</span>
+            <span className="text-right">{apiStatus}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button type="button" className="w-full" onClick={() => void save()}>
+        Save preferences
+      </Button>
     </PageEnter>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-sm font-medium text-ink">{label}</span>
-      {children}
-    </label>
   );
 }

@@ -9,7 +9,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(init?.headers || {}),
     },
     cache: "no-store",
@@ -72,6 +74,15 @@ export const api = {
   base: API_BASE,
   health: () => request<Health>("/api/health"),
   session: () => request<Session>("/api/session"),
+  /** Save browser File to server temp dir, returns absolute path. */
+  uploadFile: async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<{ path: string; name: string }>("/api/upload", {
+      method: "POST",
+      body: fd,
+    });
+  },
   importVideo: (path: string) =>
     request<{ job_id: string }>("/api/import", {
       method: "POST",
@@ -87,6 +98,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ eps, min_samples }),
     }),
+  setSettings: (body: {
+    eps?: number;
+    min_samples?: number;
+    accurate_export?: boolean;
+    theme?: string;
+    accent?: string;
+  }) =>
+    request<{ ok: boolean }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        eps: body.eps ?? 0.35,
+        min_samples: body.min_samples ?? 2,
+        accurate_export: body.accurate_export ?? false,
+        theme: body.theme ?? "dark",
+        accent: body.accent ?? "violet",
+      }),
+    }),
   setTimeline: (scenes: Scene[]) =>
     request<{ ok: boolean; count: number; duration: number }>("/api/timeline", {
       method: "POST",
@@ -97,3 +125,17 @@ export const api = {
     request<{ ok: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   frameUrl: (sceneId: number) => `${API_BASE}/api/frame/${sceneId}`,
 };
+
+/** Poll a job until terminal state. */
+export async function pollJob(
+  jobId: string,
+  onProgress?: (job: Job) => void,
+  intervalMs = 400
+): Promise<Job> {
+  for (;;) {
+    const job = await api.job(jobId);
+    onProgress?.(job);
+    if (job.status !== "running") return job;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}

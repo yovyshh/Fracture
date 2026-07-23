@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -194,6 +194,37 @@ def set_settings(body: SettingsIn):
     session["theme"] = body.theme
     session["accent"] = body.accent
     return {"ok": True}
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Accept a browser file upload and save under TEMP_ROOT/uploads."""
+    if not file.filename:
+        raise HTTPException(400, "No filename")
+    name = os.path.basename(file.filename)
+    ext = Path(name).suffix.lower()
+    if ext not in {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v"}:
+        raise HTTPException(400, f"Unsupported format: {ext or '(none)'}")
+
+    dest_dir = TEMP_ROOT / "uploads"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{uuid.uuid4().hex[:10]}_{name}"
+    try:
+        with dest.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+    except Exception as e:
+        logger.exception("upload failed")
+        raise HTTPException(500, f"Upload failed: {e}") from e
+
+    if dest.stat().st_size < 64:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "File too small or empty")
+
+    return {"path": str(dest.resolve()), "name": name}
 
 
 @app.post("/api/import")
