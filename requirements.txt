@@ -1,5 +1,6 @@
-# Fracture — runtime dependencies
-# Python 3.10–3.12 recommended
+# Fracture — runtime
+# UI: FastAPI + web frontend + pywebview (SpotiFLAC-style)
+# ML / video (still used by backend)
 
 PyQt6>=6.6
 opencv-python-headless>=4.8
@@ -8,3 +9,7 @@ Pillow>=10.0
 sentence-transformers>=2.2
 scikit-learn>=1.3
 torch>=2.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pywebview>=5.0
+python-multipart>=0.0.9

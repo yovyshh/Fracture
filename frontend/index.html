@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-accent="violet">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fracture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <button class="nav-btn active" data-page="home" title="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg>
+      </button>
+      <button class="nav-btn" data-page="settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></svg>
+      </button>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-brand" title="Fracture">F</div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- HOME -->
+      <section class="page active" id="page-home">
+        <header class="hero">
+          <div class="logo-row">
+            <div class="logo-mark">
+              <span class="logo-glyph">◆</span>
+            </div>
+            <h1 class="logo-text">Fracture</h1>
+            <span class="version-pill">v2.0</span>
+          </div>
+          <p class="hero-sub">Local AI scene split · cluster · lossless export — no account required.</p>
+
+          <div class="search-row">
+            <div class="search-box">
+              <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="path-input" type="text" placeholder="Path to video file (.mp4 / .mkv / .mov) or click Browse…" spellcheck="false" />
+              <button class="icon-btn" id="btn-browse" title="Browse">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+              </button>
+            </div>
+            <button class="btn primary" id="btn-import">
+              <span class="btn-label">Import</span>
+            </button>
+          </div>
+
+          <div class="status-strip" id="status-strip">
+            <span class="pulse" id="pulse"></span>
+            <span id="status-text">Ready</span>
+            <div class="progress-wrap hidden" id="progress-wrap">
+              <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+              <span id="progress-pct">0%</span>
+            </div>
+            <button class="btn ghost sm hidden" id="btn-cancel">Cancel</button>
+          </div>
+        </header>
+
+        <!-- Recent -->
+        <section class="block" id="recent-block">
+          <h2 class="block-title">Recent</h2>
+          <div class="chip-row" id="recent-chips"></div>
+        </section>
+
+        <!-- Clusters -->
+        <section class="block hidden" id="cluster-block">
+          <div class="block-head">
+            <h2 class="block-title">Clusters</h2>
+            <span class="muted" id="pool-meta"></span>
+          </div>
+          <div class="chip-row" id="cluster-chips"></div>
+        </section>
+
+        <!-- Media pool grid -->
+        <section class="block hidden" id="pool-block">
+          <div class="block-head">
+            <h2 class="block-title">Media Pool</h2>
+            <div class="row-actions">
+              <button class="btn ghost sm" id="btn-add-cluster">Add cluster</button>
+            </div>
+          </div>
+          <div class="card-grid" id="scene-grid"></div>
+        </section>
+
+        <!-- Timeline -->
+        <section class="block" id="timeline-block">
+          <div class="block-head">
+            <h2 class="block-title">Timeline</h2>
+            <div class="row-actions">
+              <span class="duration-pill" id="duration-pill">0.00s</span>
+              <button class="btn ghost sm" id="btn-clear-tl">Clear</button>
+              <button class="btn primary sm" id="btn-export" disabled>Export</button>
+            </div>
+          </div>
+          <div class="timeline" id="timeline">
+            <div class="timeline-empty" id="timeline-empty">Click scenes to build your cut · drag to reorder</div>
+          </div>
+        </section>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page" id="page-settings">
+        <header class="page-head">
+          <div>
+            <div class="crumb"><span class="crumb-home" id="crumb-home">Home</span><span class="crumb-sep">/</span><span>Settings</span></div>
+            <h1 class="page-title">Settings</h1>
+          </div>
+          <div class="row-actions">
+            <button class="btn ghost" id="btn-reset-settings">Reset to Default</button>
+            <button class="btn primary" id="btn-save-settings">Save Changes</button>
+          </div>
+        </header>
+
+        <div class="tabs" id="settings-tabs">
+          <button class="tab active" data-tab="general">General</button>
+          <button class="tab" data-tab="clustering">Clustering</button>
+          <button class="tab" data-tab="export">Export</button>
+          <button class="tab" data-tab="status">Status</button>
+        </div>
+
+        <div class="settings-panel active" data-panel="general">
+          <div class="settings-grid">
+            <div class="field">
+              <label>Mode</label>
+              <select id="set-theme">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Accent</label>
+              <select id="set-accent">
+                <option value="violet">Violet</option>
+                <option value="green">Green</option>
+                <option value="blue">Blue</option>
+                <option value="amber">Amber</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-panel" data-panel="clustering">
+          <div class="settings-grid">
+            <div class="field">
+              <label>Cluster epsilon <span class="hint" id="eps-val">0.35</span></label>
+              <input type="range" id="set-eps" min="0.05" max="1.5" step="0.05" value="0.35" />
+            </div>
+            <div class="field">
+              <label>Min samples <span class="hint" id="min-val">2</span></label>
+              <input type="range" id="set-min" min="1" max="10" step="1" value="2" />
+            </div>
+            <div class="field full">
+              <button class="btn secondary" id="btn-recluster">Recluster now</button>
+              <p class="field-note">Uses cached embeddings — no re-extract.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-panel" data-panel="export">
+          <div class="settings-grid">
+            <div class="field toggle-field">
+              <div>
+                <label>Accurate export</label>
+                <p class="field-note">Re-encode cuts for frame-perfect boundaries (slower).</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="set-accurate" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-panel" data-panel="status">
+          <div class="status-cards">
+            <div class="stat-card">
+              <div class="stat-label">FFmpeg</div>
+              <div class="stat-value" id="stat-ffmpeg">…</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">AI Model</div>
+              <div class="stat-value" id="stat-model">…</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Scenes</div>
+              <div class="stat-value" id="stat-scenes">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Timeline</div>
+              <div class="stat-value" id="stat-timeline">0</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toasts"></div>
+
+  <!-- Modal -->
+  <div class="modal-backdrop hidden" id="modal">
+    <div class="modal">
+      <h3 id="modal-title">Notice</h3>
+      <p id="modal-body"></p>
+      <button class="btn primary" id="modal-ok">OK</button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
