@@ -1,44 +1,81 @@
 # Fracture
 
-**Fracture** is an ultra-fast, local, AI-powered desktop video editing assistant designed for seamless scene splitting and intelligent frame clustering. Built purely in Python with a premium, sleek PyQt6 dark-mode interface, Fracture automates the tedious task of parsing large video files by instantly extracting keyframes and grouping them via Machine Learning.
+**Fracture** is a local, AI-powered desktop video editing assistant for fast scene splitting and intelligent frame clustering. Built in Python with a Hermes-inspired PyQt6 dark UI.
 
 ## Features
 
-- **Blazing Fast Keyframe Extraction**: Bypasses traditional frame-by-frame decoding overhead. Fracture uses `ffprobe` to directly extract and analyze I-frames, making video parsing nearly instantaneous.
-- **AI-Powered Scene Clustering**: Leverages Hugging Face's `sentence-transformers` (`clip-ViT-B-32`) and Scikit-Learn's DBSCAN algorithm to intelligently group similar scenes into distinct, color-coded clusters based on visual semantics — no need to pre-define the number of clusters.
-- **Configurable Clustering Parameters**: Adjust DBSCAN's epsilon (neighborhood radius) and minimum samples directly from the Settings panel to fine-tune scene grouping sensitivity.
-- **Ultra-Modern UI/UX**: Built with a sleek, minimalist dark/light theme with pill-shaped geometry, buttery smooth pixel-scrolling, and a clean responsive layout.
-- **Drag-and-Drop Timeline**: A fully interactive timeline queue that allows you to curate, reorder, and seamlessly delete clips with custom inline UI controls or simple keyboard shortcuts.
-- **Non-Blocking Export**: Merging and exporting happens in a background thread — no UI freeze, with live progress feedback.
-- **Lossless Export**: Uses FFmpeg's `concat` demuxer to merge your curated timeline selections into a final master video without any quality degradation or re-encoding penalties.
-- **Model Caching**: The CLIP model is loaded once and shared across analyses — subsequent video imports skip the download delay.
-- **Hover Preview**: Hover over any scene thumbnail to see a live video preview of that clip.
+- **Fast keyframe extraction** — `ffprobe` I-frames (no full decode)
+- **CLIP + DBSCAN clustering** — L2-normalized embeddings, cosine distance
+- **Instant recluster** — tweak epsilon / min samples without re-importing
+- **Hermes-style UI** — slate canvas, cyan accents, cluster chips, duration pill
+- **Cluster bulk-add** — Shift+click a chip, or right-click a thumbnail
+- **Timeline** — reorder, de-dupe, undo (Ctrl+Z), duration total
+- **Cancelable jobs** — analysis & export (Esc)
+- **Lossless export** — FFmpeg concat `-c copy` (optional accurate re-encode)
+- **Drag-and-drop import**
+- **Model preload** on startup
+- **Project save** (`.fracture.json`)
 
-## Technology Stack
+## Stack
 
-- **GUI & Frontend**: PyQt6
-- **Video & Computer Vision**: OpenCV (`cv2`), FFmpeg, `ffprobe`
-- **Machine Learning**: `sentence-transformers`, `scikit-learn`
-- **OS Compatibility**: Fully optimized for Windows environments (invisible background subprocess handling)
+- **GUI:** PyQt6
+- **Video:** FFmpeg / ffprobe, OpenCV
+- **ML:** `sentence-transformers` (`clip-ViT-B-32`), scikit-learn
 
-## How to Use
+## Requirements
 
-1. **Import Video**: Click the import button to load your `.mp4`, `.mkv`, `.avi`, or `.mov` file.
-2. **Analysis**: Fracture will silently extract and cluster the keyframes in the background, displaying the results in the Media Pool.
-3. **Tune Settings** (optional): Open Settings to adjust cluster sensitivity (epsilon) and minimum samples per cluster.
-4. **Curate Timeline**: Drag your desired clusters from the Media Pool down to the Timeline Queue. Right-click or use the inline 'X' button to remove scenes.
-5. **Export**: Hit 'Merge & Export' to stitch your selections together into a final, lossless output file.
+- Windows (primary), FFmpeg + ffprobe on `PATH`
+- Python 3.10–3.12 recommended (3.14 venv may need rebuilt wheels)
 
-## Project Structure
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+
+Or double-click `Fracture.vbs` for a windowless launch.
+
+## How to use
+
+1. **Import** video (button, `I`, or drag-drop)
+2. Wait for analysis — scenes appear in the Media Pool
+3. **Filter** by cluster chips; **Shift+click** a chip to add the whole cluster
+4. **Click** scenes onto the Timeline; drag to reorder; `Del` to remove; `Ctrl+Z` undo
+5. **Settings** (`S`) — theme, DBSCAN eps / min samples, accurate export
+6. **Export** (`E`) — lossless master MP4
+
+## Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `I` | Import |
+| `E` | Export |
+| `S` | Settings |
+| `Esc` | Cancel running job |
+| `Ctrl+Z` | Undo timeline |
+| `1–9` | Filter cluster N |
+| `0` | Show all clusters |
+
+## Project layout
 
 ```
 Fracture/
-├── main.py               # Application entry point
-├── ui_components.py       # PyQt6 UI: windows, workers, widgets
-├── video_processor.py     # FFprobe scene detection + frame extraction
-├── ml_engine.py           # CLIP embeddings + DBSCAN clustering
-├── exporter.py            # FFmpeg concat-based lossless export
-├── icons/                 # UI icons and assets
-├── venv/                  # Python virtual environment
+├── main.py               # Entry + logging
+├── ui_components.py      # Hermes-themed PyQt6 UI
+├── video_processor.py    # I-frame detect + frame extract
+├── ml_engine.py          # CLIP embeddings + cosine DBSCAN
+├── exporter.py           # Concat export (cancelable)
+├── requirements.txt
+├── icons/
 └── README.md
 ```
+
+## Clustering notes
+
+Default `eps=0.35` with **cosine** metric on L2-normalized CLIP vectors.  
+Lower eps → tighter clusters. Higher → broader groups. Noise labeled `-1`.
+
+## License
+
+Project-local use.

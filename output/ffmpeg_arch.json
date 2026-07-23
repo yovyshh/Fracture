@@ -1,0 +1,37 @@
+[
+  {"id":"title","type":"text","x":180,"y":5,"text":"FFmpeg — Complete Architecture Pipeline","strokeColor":"#1E293B","fontSize":18},
+
+  {"id":"input","type":"rectangle","x":60,"y":50,"width":340,"height":56,"text":"Input Media File  (MP4 / MKV / AVI / MOV / TS)","backgroundColor":"#E0E7FF","strokeColor":"#4F46E5","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_0","type":"arrow","x":230,"y":106,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"input"},"end":{"id":"demuxer"},"endArrowhead":"arrow"},
+
+  {"id":"demuxer","type":"rectangle","x":60,"y":160,"width":340,"height":56,"text":"libavformat — Demuxer   (splits container → elementary streams)","backgroundColor":"#DBEAFE","strokeColor":"#2563EB","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_1","type":"arrow","x":230,"y":216,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"demuxer"},"end":{"id":"decoder"},"endArrowhead":"arrow"},
+
+  {"id":"decoder","type":"rectangle","x":60,"y":270,"width":340,"height":56,"text":"libavcodec — Decoder   (packets → raw YUV/RGB/PCM frames)","backgroundColor":"#D1FAE5","strokeColor":"#059669","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_2","type":"arrow","x":230,"y":326,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"decoder"},"end":{"id":"filter"},"endArrowhead":"arrow"},
+
+  {"id":"filter","type":"rectangle","x":60,"y":380,"width":340,"height":56,"text":"libavfilter — Filter Graph   (scale, crop, rotate, overlay, volume…)","backgroundColor":"#FEF3C7","strokeColor":"#D97706","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_3","type":"arrow","x":230,"y":436,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"filter"},"end":{"id":"encoder"},"endArrowhead":"arrow"},
+
+  {"id":"encoder","type":"rectangle","x":60,"y":490,"width":340,"height":56,"text":"libavcodec — Encoder   (filtered frames → encoded packets)","backgroundColor":"#D1FAE5","strokeColor":"#059669","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_4","type":"arrow","x":230,"y":546,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"encoder"},"end":{"id":"muxer"},"endArrowhead":"arrow"},
+
+  {"id":"muxer","type":"rectangle","x":60,"y":600,"width":340,"height":56,"text":"libavformat — Muxer   (packets → output container)","backgroundColor":"#DBEAFE","strokeColor":"#2563EB","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"arrow_5","type":"arrow","x":230,"y":656,"strokeColor":"#64748B","strokeWidth":2,"points":[[0,0],[0,54]],"start":{"id":"muxer"},"end":{"id":"output"},"endArrowhead":"arrow"},
+
+  {"id":"output","type":"rectangle","x":60,"y":710,"width":340,"height":56,"text":"Output File  (MP4 / MKV / GIF / Image Sequence)","backgroundColor":"#E0E7FF","strokeColor":"#4F46E5","strokeWidth":2,"roundness":{"type":3}},
+
+  {"id":"libs_title","type":"text","x":500,"y":42,"text":"Supporting Libraries","strokeColor":"#1E293B","fontSize":14},
+  {"id":"util","type":"rectangle","x":500,"y":70,"width":230,"height":48,"text":"libavutil — memory, math, CRC, logging","backgroundColor":"#F3E8FF","strokeColor":"#9333EA","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"swscale","type":"rectangle","x":500,"y":160,"width":230,"height":48,"text":"libswscale — colorspace, scaling","backgroundColor":"#F3E8FF","strokeColor":"#9333EA","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"swresample","type":"rectangle","x":500,"y":250,"width":230,"height":48,"text":"libswresample — audio resampling","backgroundColor":"#F3E8FF","strokeColor":"#9333EA","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"postproc","type":"rectangle","x":500,"y":340,"width":230,"height":48,"text":"libpostproc — post-processing","backgroundColor":"#F3E8FF","strokeColor":"#9333EA","strokeWidth":2,"roundness":{"type":3}},
+
+  {"id":"tools_title","type":"text","x":500,"y":440,"text":"Command-Line Tools","strokeColor":"#1E293B","fontSize":14},
+  {"id":"tool_ffmpeg","type":"rectangle","x":500,"y":470,"width":230,"height":40,"text":"ffmpeg  —  main transcoding CLI","backgroundColor":"#FCE7F3","strokeColor":"#DB2777","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"tool_ffprobe","type":"rectangle","x":500,"y":530,"width":230,"height":40,"text":"ffprobe  —  media probe / analysis","backgroundColor":"#FCE7F3","strokeColor":"#DB2777","strokeWidth":2,"roundness":{"type":3}},
+  {"id":"tool_ffplay","type":"rectangle","x":500,"y":590,"width":230,"height":40,"text":"ffplay  —  media player","backgroundColor":"#FCE7F3","strokeColor":"#DB2777","strokeWidth":2,"roundness":{"type":3}},
+
+  {"id":"data_flow_title","type":"text","x":500,"y":680,"text":"Data Flow Direction","strokeColor":"#1E293B","fontSize":14},
+  {"id":"data_flow_arrow","type":"rectangle","x":530,"y":710,"width":170,"height":56,"text":"Top → Bottom Pipeline Flow","backgroundColor":"#F0F9FF","strokeColor":"#0EA5E9","strokeWidth":2,"roundness":{"type":3}}
+]

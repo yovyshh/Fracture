@@ -1,0 +1,10 @@
+# Fracture — runtime dependencies
+# Python 3.10–3.12 recommended
+
+PyQt6>=6.6
+opencv-python-headless>=4.8
+numpy>=1.24
+Pillow>=10.0
+sentence-transformers>=2.2
+scikit-learn>=1.3
+torch>=2.0

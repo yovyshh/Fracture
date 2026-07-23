@@ -1,5 +1,33 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
 venv/
+.venv/
 .env
+*.egg-info/
+dist/
+build/
+*.spec.bak
+node_modules/
+
+# Local caches / exports
+output/arch_slides/
+*.log
+.fracture/
+_tmp*/
+_tmp_frames*/
+
+# Large binaries (keep out of git unless intentional)
+*.exe
+*.pkg
+*.pyz
+*.PYZ
+Fracture.pkg
+
+# Editor / agent noise
+.gemini/
+.opencode/
+.idea/
+.vscode/

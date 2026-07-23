@@ -1,154 +1,327 @@
+import json
 import logging
 import math
 import os
 import shutil
 import tempfile
+import threading
 import time
+from collections import defaultdict
 from functools import lru_cache
 
 import cv2
+from PyQt6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFileDialog, QProgressBar, QListWidget, QListWidgetItem,
-    QScrollArea, QGridLayout, QSplitter, QDialog,
-    QStyledItemDelegate, QFrame, QAbstractItemView, QStatusBar,
-    QComboBox, QFormLayout, QDoubleSpinBox, QSpinBox
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QStatusBar,
+    QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QEvent
-from PyQt6.QtGui import QPixmap, QIcon, QPainter, QImage
 
-from video_processor import detect_scenes_and_extract_frames
-from ml_engine import MLEngine
 from exporter import export_video
+from ml_engine import MLEngine, preload_model_async
+from video_processor import detect_scenes_and_extract_frames
 
 logger = logging.getLogger(__name__)
 
 
+class _UiBridge(QObject):
+    """Marshal background-thread callbacks onto the Qt UI thread."""
+    status = pyqtSignal(str)
+
+
+# Cluster accents — electric blue family on pure black
+CLUSTER_COLORS = [
+    "#3b82f6", "#60a5fa", "#93c5fd", "#2563eb", "#1d4ed8",
+    "#38bdf8", "#7dd3fc", "#a5b4fc", "#818cf8", "#c4b5fd",
+]
+
+
+ASCII_LOGO = r"""
+ ╔═╗╦═╗╔═╗╔═╗╔╦╗╦ ╦╦═╗╔═╗
+ ╠╣ ╠╦╝╠═╣║   ║ ║ ║╠╦╝║╣
+ ╚  ╩╚═╩ ╩╚═╝ ╩ ╚═╝╩╚═╚═╝
+""".strip("\n")
+
+
 @lru_cache(maxsize=2)
-def get_stylesheet(is_dark_mode):
-    bg = "#09090B" if is_dark_mode else "#F4F4F5"
-    panel = "#18181B" if is_dark_mode else "#FFFFFF"
-    border = "#27272A" if is_dark_mode else "#E4E4E7"
-    input_border = "#3F3F46" if is_dark_mode else "#D4D4D8"
-    text = "#FAFAFA" if is_dark_mode else "#09090B"
-    muted = "#A1A1AA" if is_dark_mode else "#71717A"
-    primary = "#2563EB"
-    primary_hover = "#3B82F6"
-    btn_bg = "#27272A" if is_dark_mode else "#F4F4F5"
-    btn_hover = "#3F3F46" if is_dark_mode else "#E4E4E7"
+def get_stylesheet(is_dark_mode: bool) -> str:
+    """
+    Pure-black Hermes-inspired terminal UI.
+    Electric blue (#0040FF family) + white on #000000 — mono type.
+    """
+    if is_dark_mode:
+        bg = "#000000"
+        panel = "#0a0a0a"
+        elevated = "#111111"
+        border = "#1a1a1a"
+        input_border = "#2a2a2a"
+        text = "#f5f5f5"
+        muted = "#6b6b6b"
+        primary = "#0047FF"       # electric Hermes blue
+        primary_hi = "#3D7CFF"
+        primary_text = "#ffffff"
+        btn_bg = "#0f0f0f"
+        btn_hover = "#1a1a1a"
+        danger = "#ff4d6d"
+        success = "#3D7CFF"
+        scroll = "#2a2a2a"
+        mono = '"Cascadia Mono", "Consolas", "JetBrains Mono", "Courier New", monospace'
+    else:
+        # Light inverted: white page, blue ink (closer to hermes.com lower section)
+        bg = "#ffffff"
+        panel = "#f7f7f7"
+        elevated = "#eeeeee"
+        border = "#e0e0e0"
+        input_border = "#cccccc"
+        text = "#0a0a0a"
+        muted = "#666666"
+        primary = "#0047FF"
+        primary_hi = "#0033CC"
+        primary_text = "#ffffff"
+        btn_bg = "#f0f0f0"
+        btn_hover = "#e5e5e5"
+        danger = "#cc0033"
+        success = "#0047FF"
+        scroll = "#cccccc"
+        mono = '"Cascadia Mono", "Consolas", "JetBrains Mono", "Courier New", monospace'
 
     return f"""
         QMainWindow, QDialog {{
             background-color: {bg};
         }}
         QWidget {{
-            font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+            font-family: {mono};
             color: {text};
+            font-size: 12px;
         }}
         #Toolbar, #PanelFrame {{
             background-color: {panel};
             border: 1px solid {border};
-            border-radius: 6px;
+            border-radius: 0px;
+        }}
+        #BrandDot {{
+            background-color: {primary};
+            border-radius: 0px;
+            min-width: 8px;
+            max-width: 8px;
+            min-height: 8px;
+            max-height: 8px;
+        }}
+        #BrandTitle {{
+            color: {text};
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 3px;
+        }}
+        #BrandSub {{
+            color: {muted};
+            font-size: 10px;
+            letter-spacing: 1px;
+        }}
+        #AsciiLogo {{
+            color: {primary};
+            font-size: 9px;
+            font-weight: 700;
+            line-height: 11px;
         }}
         #PanelTitle {{
-            color: {text};
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 5px;
+            color: {primary};
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+        }}
+        #PanelMeta {{
+            color: {muted};
+            font-size: 10px;
         }}
         QPushButton {{
-            padding: 6px 16px;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 12px;
+            padding: 7px 14px;
+            border-radius: 0px;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }}
         QPushButton#PrimaryButton {{
             background-color: {primary};
-            color: white;
+            color: {primary_text};
             border: 1px solid {primary};
         }}
         QPushButton#PrimaryButton:hover {{
-            background-color: {primary_hover};
+            background-color: {primary_hi};
+            border-color: {primary_hi};
         }}
         QPushButton#PrimaryButton:disabled {{
-            background-color: {panel};
+            background-color: {elevated};
             color: {muted};
             border: 1px solid {input_border};
         }}
-        QPushButton#SecondaryButton, QPushButton#SettingsButton {{
+        QPushButton#SecondaryButton, QPushButton#SettingsButton, QPushButton#GhostButton {{
             background-color: {btn_bg};
             color: {text};
             border: 1px solid {input_border};
         }}
-        QPushButton#SecondaryButton:hover, QPushButton#SettingsButton:hover {{
+        QPushButton#SecondaryButton:hover, QPushButton#SettingsButton:hover, QPushButton#GhostButton:hover {{
             background-color: {btn_hover};
-            border: 1px solid {muted};
+            border: 1px solid {primary};
+            color: {primary};
         }}
-        QPushButton#SecondaryButton:disabled {{
+        QPushButton#SecondaryButton:disabled, QPushButton#GhostButton:disabled {{
             background-color: {panel};
             color: {muted};
+            border: 1px solid {border};
+        }}
+        QPushButton#DangerButton {{
+            background-color: transparent;
+            color: {danger};
+            border: 1px solid {input_border};
+        }}
+        QPushButton#DangerButton:hover {{
+            border-color: {danger};
+            background-color: {elevated};
         }}
         QProgressBar {{
-            border: none;
-            background-color: {btn_bg};
-            border-radius: 4px;
+            border: 1px solid {border};
+            background-color: {elevated};
+            border-radius: 0px;
+            max-height: 8px;
+            min-height: 8px;
+            text-align: center;
         }}
         QProgressBar::chunk {{
             background-color: {primary};
-            border-radius: 4px;
+            border-radius: 0px;
         }}
         QListWidget {{
             background-color: {bg};
             border: 1px solid {border};
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 0px;
+            padding: 6px;
             outline: none;
+            font-family: {mono};
         }}
         QListWidget::item {{
             padding: 8px;
-            padding-right: 40px;
+            padding-right: 56px;
             background-color: {panel};
             border: 1px solid {border};
-            border-radius: 4px;
+            border-radius: 0px;
             margin-bottom: 4px;
             color: {text};
-            font-size: 12px;
+            font-size: 11px;
         }}
         QListWidget::item:selected {{
             border: 1px solid {primary};
-            background-color: {btn_bg};
+            background-color: {elevated};
+            color: {primary};
         }}
         QScrollArea {{
             border: none;
             background-color: transparent;
         }}
+        QScrollBar:vertical {{
+            background: {bg};
+            width: 8px;
+            margin: 0;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {scroll};
+            min-height: 24px;
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0;
+        }}
         QSplitter::handle {{
-            background-color: transparent;
+            background-color: {border};
+            height: 2px;
         }}
         QStatusBar {{
             background-color: {panel};
             color: {muted};
             border-top: 1px solid {border};
+            font-size: 10px;
         }}
         SceneThumbnail {{
             background-color: {panel};
             border: 1px solid {input_border};
-            border-radius: 4px;
+            border-radius: 0px;
         }}
         SceneThumbnail:hover {{
             border: 1px solid {primary};
-            background-color: {btn_hover};
+            background-color: {elevated};
         }}
-        QDoubleSpinBox, QSpinBox {{
+        QDoubleSpinBox, QSpinBox, QComboBox {{
             background-color: {bg};
             border: 1px solid {input_border};
-            border-radius: 4px;
-            padding: 4px 8px;
+            border-radius: 0px;
+            padding: 5px 8px;
             color: {text};
+            min-height: 16px;
+            font-family: {mono};
         }}
-        QComboBox {{
-            padding: 4px;
-            border-radius: 4px;
+        QComboBox::drop-down {{ border: none; width: 18px; }}
+        QComboBox QAbstractItemView {{
+            background: {panel};
+            color: {text};
+            selection-background-color: {primary};
+            selection-color: {primary_text};
+            border: 1px solid {border};
+        }}
+        QCheckBox {{ color: {text}; spacing: 8px; font-family: {mono}; }}
+        QCheckBox::indicator {{
+            width: 14px; height: 14px;
+            border-radius: 0px;
+            border: 1px solid {input_border};
+            background: {bg};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {primary};
+            border-color: {primary};
+        }}
+        #ClusterChip {{
+            background-color: {elevated};
+            border: 1px solid {input_border};
+            border-radius: 0px;
+            padding: 4px 10px;
+            color: {text};
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }}
+        #ClusterChip:hover {{
+            border-color: {primary};
+            color: {primary};
+        }}
+        #DurationPill {{
+            background-color: {elevated};
+            border: 1px solid {primary};
+            border-radius: 0px;
+            padding: 4px 10px;
+            color: {primary};
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
         }}
     """
 
@@ -157,80 +330,85 @@ class PremiumNotification(QDialog):
     def __init__(self, title, message, is_error=False, parent=None, is_dark_mode=True):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedSize(400, 200)
+        self.setFixedSize(420, 210)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet(get_stylesheet(is_dark_mode))
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(15)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(14)
 
-        border_color = "#EF4444" if is_error else "#2563EB"
+        accent = "#ff4d6d" if is_error else "#0047FF"
         title_label = QLabel(title)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet(f"color: {border_color}; font-size: 14px; font-weight: bold;")
+        title_label.setStyleSheet(f"color: {accent}; font-size: 13px; font-weight: 700; letter-spacing: 2px;")
         layout.addWidget(title_label)
 
         msg_label = QLabel(message)
         msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         msg_label.setWordWrap(True)
+        msg_label.setStyleSheet("color: #6b6b6b; font-size: 12px;")
         layout.addWidget(msg_label)
 
         btn_layout = QHBoxLayout()
         ok_btn = QPushButton("OK")
         ok_btn.setObjectName("PrimaryButton")
         ok_btn.clicked.connect(self.accept)
-
         btn_layout.addStretch()
         btn_layout.addWidget(ok_btn)
         btn_layout.addStretch()
-
         layout.addLayout(btn_layout)
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None, is_dark_mode=True, eps=0.5, min_samples=2):
+    def __init__(self, parent=None, is_dark_mode=True, eps=0.35, min_samples=2, accurate_export=False):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setFixedSize(350, 220)
+        self.setFixedSize(380, 300)
         self.is_dark = is_dark_mode
         self.setStyleSheet(get_stylesheet(is_dark_mode))
 
         layout = QFormLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Dark Mode", "Light Mode"])
+        self.theme_combo.addItems(["Black / ASCII", "Light"])
         self.theme_combo.setCurrentIndex(0 if is_dark_mode else 1)
-
-        layout.addRow("Theme Interface:", self.theme_combo)
+        layout.addRow("Theme", self.theme_combo)
 
         self.eps_spin = QDoubleSpinBox()
-        self.eps_spin.setRange(0.1, 5.0)
-        self.eps_spin.setSingleStep(0.1)
+        self.eps_spin.setRange(0.05, 2.0)
+        self.eps_spin.setSingleStep(0.05)
         self.eps_spin.setValue(eps)
-        self.eps_spin.setDecimals(1)
-        layout.addRow("Cluster epsilon:", self.eps_spin)
+        self.eps_spin.setDecimals(2)
+        self.eps_spin.setToolTip("Cosine DBSCAN neighborhood radius. Lower = tighter clusters.")
+        layout.addRow("Cluster epsilon", self.eps_spin)
 
         self.min_samples_spin = QSpinBox()
         self.min_samples_spin.setRange(1, 20)
         self.min_samples_spin.setValue(min_samples)
-        layout.addRow("Min samples:", self.min_samples_spin)
+        layout.addRow("Min samples", self.min_samples_spin)
+
+        self.accurate_check = QCheckBox("Accurate export (re-encode cuts)")
+        self.accurate_check.setChecked(accurate_export)
+        layout.addRow("", self.accurate_check)
+
+        hint = QLabel("Apply re-clusters instantly if embeddings are cached.")
+        hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        hint.setWordWrap(True)
+        layout.addRow(hint)
 
         btn_layout = QHBoxLayout()
+        close_btn = QPushButton("Cancel")
+        close_btn.setObjectName("SecondaryButton")
+        close_btn.clicked.connect(self.reject)
         apply_btn = QPushButton("Apply")
         apply_btn.setObjectName("PrimaryButton")
         apply_btn.clicked.connect(self.apply_settings)
-
-        close_btn = QPushButton("Close")
-        close_btn.setObjectName("SecondaryButton")
-        close_btn.clicked.connect(self.reject)
-
         btn_layout.addStretch()
         btn_layout.addWidget(close_btn)
         btn_layout.addWidget(apply_btn)
-
         layout.addRow(btn_layout)
 
     def apply_settings(self):
@@ -240,7 +418,6 @@ class SettingsDialog(QDialog):
 
 class PreviewWorker(QThread):
     frame_ready = pyqtSignal(QPixmap)
-
     PREVIEW_FPS_CAP = 15.0
 
     def __init__(self, video_path, start_time, duration):
@@ -257,31 +434,24 @@ class PreviewWorker(QThread):
             if fps <= 0 or math.isnan(fps):
                 fps = 30.0
             fps = min(fps, self.PREVIEW_FPS_CAP)
-
-            start_frame = int(self.start_time * fps)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-            max_frames = int(min(3.0, self.duration) * fps)
-
+            # Prefer time seek for accuracy
+            cap.set(cv2.CAP_PROP_POS_MSEC, self.start_time * 1000.0)
+            max_frames = int(min(3.0, max(0.2, self.duration)) * fps)
             for _ in range(max_frames):
                 if not self.running:
                     break
                 ret, frame = cap.read()
                 if not ret:
                     break
-
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = frame.shape
-                bytes_per_line = ch * w
-                qt_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                qt_img = QImage(frame.data, w, h, ch * w, QImage.Format.Format_RGB888).copy()
                 pixmap = QPixmap.fromImage(qt_img).scaled(
-                    160, 90, Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
+                    168, 94, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
                 )
-
                 self.frame_ready.emit(pixmap)
                 time.sleep(1.0 / fps)
-
             cap.release()
         except Exception:
             logger.warning("PreviewWorker crashed", exc_info=True)
@@ -292,16 +462,16 @@ class AnalysisWorker(QThread):
     finished_analysis = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, video_path, eps=0.5, min_samples=2):
+    def __init__(self, video_path, ml_engine: MLEngine, eps=0.35, min_samples=2):
         super().__init__()
         self.video_path = video_path
         self.eps = eps
         self.min_samples = min_samples
-        self.ml_engine = MLEngine()
-        self._cancel = False
+        self.ml_engine = ml_engine
+        self._cancel = threading.Event()
 
     def cancel(self):
-        self._cancel = True
+        self._cancel.set()
 
     def run(self):
         try:
@@ -310,24 +480,60 @@ class AnalysisWorker(QThread):
             def p_callback(val, msg):
                 self.progress_updated.emit(val, msg)
 
-            scenes, error = detect_scenes_and_extract_frames(self.video_path, temp_dir, p_callback)
-            if self._cancel:
+            scenes, error = detect_scenes_and_extract_frames(
+                self.video_path, temp_dir, p_callback, cancel_event=self._cancel
+            )
+            if self._cancel.is_set():
                 return
             if error:
-                self.error_occurred.emit(error)
+                if error != "Cancelled.":
+                    self.error_occurred.emit(error)
                 return
             if not scenes:
                 self.error_occurred.emit("No scenes detected.")
                 return
 
-            clustered_scenes = self.ml_engine.cluster_scenes(
+            clustered = self.ml_engine.cluster_scenes(
+                scenes,
+                eps=self.eps,
+                min_samples=self.min_samples,
+                progress_callback=p_callback,
+                cancel_event=self._cancel,
+            )
+            if not self._cancel.is_set():
+                self.finished_analysis.emit(clustered)
+        except Exception as e:
+            if not self._cancel.is_set():
+                logger.exception("Analysis failed")
+                self.error_occurred.emit(str(e))
+
+
+class ReclusterWorker(QThread):
+    progress_updated = pyqtSignal(int, str)
+    finished_analysis = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, scenes_data, ml_engine: MLEngine, eps, min_samples):
+        super().__init__()
+        self.scenes_data = scenes_data
+        self.ml_engine = ml_engine
+        self.eps = eps
+        self.min_samples = min_samples
+
+    def run(self):
+        try:
+            def p_callback(val, msg):
+                self.progress_updated.emit(val, msg)
+
+            # Copy so we don't mutate mid-paint unexpectedly
+            scenes = [dict(s) for s in self.scenes_data]
+            clustered = self.ml_engine.recluster_cached(
                 scenes, eps=self.eps, min_samples=self.min_samples, progress_callback=p_callback
             )
-            if not self._cancel:
-                self.finished_analysis.emit(clustered_scenes)
+            self.finished_analysis.emit(clustered)
         except Exception as e:
-            if not self._cancel:
-                self.error_occurred.emit(str(e))
+            logger.exception("Recluster failed")
+            self.error_occurred.emit(str(e))
 
 
 class ExportWorker(QThread):
@@ -335,60 +541,97 @@ class ExportWorker(QThread):
     finished_export = pyqtSignal()
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, video_path, ordered_scenes, output_path):
+    def __init__(self, video_path, ordered_scenes, output_path, accurate=False):
         super().__init__()
         self.video_path = video_path
         self.ordered_scenes = ordered_scenes
         self.output_path = output_path
-        self._cancel = False
+        self.accurate = accurate
+        self._cancel = threading.Event()
 
     def cancel(self):
-        self._cancel = True
+        self._cancel.set()
 
     def run(self):
         try:
             def p_callback(val, msg):
                 self.progress_updated.emit(val, msg)
-            export_video(self.video_path, self.ordered_scenes, self.output_path, progress_callback=p_callback)
-            if not self._cancel:
+
+            export_video(
+                self.video_path,
+                self.ordered_scenes,
+                self.output_path,
+                progress_callback=p_callback,
+                cancel_event=self._cancel,
+                accurate=self.accurate,
+            )
+            if not self._cancel.is_set():
                 self.finished_export.emit()
         except Exception as e:
-            if not self._cancel:
+            if not self._cancel.is_set() or "cancelled" not in str(e).lower():
                 self.error_occurred.emit(str(e))
+            elif self._cancel.is_set():
+                self.error_occurred.emit("Export cancelled.")
 
 
 class SceneThumbnail(QFrame):
-    def __init__(self, scene_data, video_path, parent=None):
+    def __init__(self, scene_data, video_path, parent=None, on_add=None, on_add_cluster=None):
         super().__init__(parent)
         self.scene_data = scene_data
         self.video_path = video_path
+        self.on_add = on_add
+        self.on_add_cluster = on_add_cluster
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedWidth(180)
 
-        self.original_pixmap = QPixmap(scene_data['frame_path']).scaled(
-            160, 90, Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
+        cluster = int(scene_data.get("cluster", -1))
+        color = "#64748b" if cluster < 0 else CLUSTER_COLORS[cluster % len(CLUSTER_COLORS)]
+
+        self.original_pixmap = QPixmap(scene_data["frame_path"]).scaled(
+            168, 94, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
         )
         self.preview_worker = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
         self.image_label = QLabel()
         self.image_label.setPixmap(self.original_pixmap)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.info_label = QLabel(f"Cluster {scene_data['cluster']}  |  {scene_data['duration']:.1f}s")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         layout.addWidget(self.image_label)
-        layout.addWidget(self.info_label)
+
+        meta = QHBoxLayout()
+        badge = QLabel("noise" if cluster < 0 else f"C{cluster}")
+        badge.setStyleSheet(
+            f"color: {color}; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;"
+        )
+        dur = QLabel(f"{scene_data['duration']:.1f}s")
+        dur.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        meta.addWidget(badge)
+        meta.addStretch()
+        meta.addWidget(dur)
+        layout.addLayout(meta)
+
+        # Left-edge cluster accent via stylesheet border is enough; paint a bar
+        self._accent = color
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(self._accent))
+        p.drawRoundedRect(0, 10, 3, self.height() - 20, 1.5, 1.5)
+        p.end()
 
     def enterEvent(self, event):
         super().enterEvent(event)
         if self.preview_worker and self.preview_worker.isRunning():
             return
         self.preview_worker = PreviewWorker(
-            self.video_path, self.scene_data['start_time'], self.scene_data['duration']
+            self.video_path, self.scene_data["start_time"], self.scene_data["duration"]
         )
         self.preview_worker.frame_ready.connect(self.update_image)
         self.preview_worker.start()
@@ -397,7 +640,7 @@ class SceneThumbnail(QFrame):
         super().leaveEvent(event)
         if self.preview_worker:
             self.preview_worker.running = False
-            self.preview_worker.wait()
+            self.preview_worker.wait(500)
             try:
                 self.preview_worker.frame_ready.disconnect()
             except TypeError:
@@ -409,213 +652,412 @@ class SceneThumbnail(QFrame):
         self.image_label.setPixmap(pixmap)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            main_window = self.window()
-            if hasattr(main_window, 'add_to_timeline'):
-                main_window.add_to_timeline(self.scene_data)
+        if event.button() == Qt.MouseButton.LeftButton and self.on_add:
+            self.on_add(self.scene_data)
+        elif event.button() == Qt.MouseButton.RightButton and self.on_add_cluster:
+            self.on_add_cluster(self.scene_data.get("cluster", -1))
 
 
 class TimelineDelegate(QStyledItemDelegate):
+    """Paints a red 'DEL' hit-target on each timeline row (no image asset)."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "delete.png")
-        self.delete_pixmap = QPixmap(icon_path).scaled(
-            16, 16, Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
+        self._font = QFont("Cascadia Mono", 9)
+        self._font.setBold(True)
+        if not self._font.exactMatch():
+            self._font = QFont("Consolas", 9)
+            self._font.setBold(True)
+
+    def _delete_rect(self, option_rect: QRect) -> QRect:
+        # Wider hit target for the text label
+        w, h = 40, 18
+        return QRect(
+            option_rect.right() - w - 10,
+            option_rect.top() + (option_rect.height() - h) // 2,
+            w,
+            h,
         )
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
-        rect = option.rect
-        delete_rect = QRect(rect.right() - 32, rect.top() + (rect.height() - 16) // 2, 16, 16)
-        painter.drawPixmap(delete_rect.topLeft(), self.delete_pixmap)
+        delete_rect = self._delete_rect(option.rect)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.setFont(self._font)
+        # subtle red pill background
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 77, 109, 28))
+        painter.drawRect(delete_rect)
+        painter.setPen(QColor("#ff4d6d"))
+        painter.drawText(delete_rect, int(Qt.AlignmentFlag.AlignCenter), "DEL")
+        painter.restore()
 
     def editorEvent(self, event, model, option, index):
         if event.type() == QEvent.Type.MouseButtonRelease:
-            rect = option.rect
-            delete_rect = QRect(rect.right() - 32, rect.top() + (rect.height() - 16) // 2, 16, 16)
-            if delete_rect.contains(event.pos()):
+            if self._delete_rect(option.rect).contains(event.pos()):
                 model.removeRow(index.row())
+                # notify parent list if it has changed signal
+                parent = self.parent()
+                if parent is not None and hasattr(parent, "changed"):
+                    try:
+                        parent.changed.emit()
+                    except Exception:
+                        pass
                 return True
         return super().editorEvent(event, model, option, index)
 
 
 class TimelineListWidget(QListWidget):
+    changed = pyqtSignal()
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             for item in self.selectedItems():
                 self.takeItem(self.row(item))
+            self.changed.emit()
         else:
             super().keyPressEvent(event)
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.changed.emit()
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Fracture - Pro Video Editor")
+        self.setWindowTitle("Fracture")
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "view.png")
-        self.setWindowIcon(QIcon(icon_path))
-        self.resize(1280, 800)
+        if os.path.isfile(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        self.resize(1360, 860)
+        self.setAcceptDrops(True)
 
         self.video_path = None
         self.scenes_data = []
-        self.timeline_scenes = []
         self.is_dark_mode = True
-        self.eps = 0.5
+        self.eps = 0.35
         self.min_samples = 2
+        self.accurate_export = False
+        self.cluster_filter = None  # None = all
         self.worker = None
         self.export_worker = None
+        self.recluster_worker = None
+        self.ml_engine = MLEngine()
+        self._undo_stack = []  # list of timeline scene lists
+        self._bridge = _UiBridge()
+        self._bridge.status.connect(self._set_status)
 
         self.init_ui()
         self.apply_styles()
+        self._bind_shortcuts()
 
+        # Preload CLIP in background
+        self.status_label.setText(" Loading AI model…")
+        preload_model_async(self._on_model_preload)
+
+    # ── UI ──────────────────────────────────────────────
     def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(18, 18, 18, 10)
+        root.setSpacing(14)
 
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 10)
-        main_layout.setSpacing(16)
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setObjectName("Toolbar")
+        tb = QHBoxLayout(toolbar)
+        tb.setContentsMargins(16, 12, 16, 12)
+        tb.setSpacing(12)
 
-        toolbar_frame = QFrame()
-        toolbar_frame.setObjectName("Toolbar")
-        toolbar_layout = QHBoxLayout(toolbar_frame)
-        toolbar_layout.setContentsMargins(15, 15, 15, 15)
-        toolbar_layout.setSpacing(15)
+        brand_dot = QFrame()
+        brand_dot.setObjectName("BrandDot")
+        brand_col = QVBoxLayout()
+        brand_col.setSpacing(0)
+        brand_col.setContentsMargins(0, 0, 0, 0)
+        brand_title = QLabel("FRACTURE")
+        brand_title.setObjectName("BrandTitle")
+        brand_sub = QLabel("// local · offline · lossless")
+        brand_sub.setObjectName("BrandSub")
+        brand_col.addWidget(brand_title)
+        brand_col.addWidget(brand_sub)
 
-        self.import_btn = QPushButton("Import Local Video")
+        ascii_logo = QLabel(ASCII_LOGO)
+        ascii_logo.setObjectName("AsciiLogo")
+        ascii_logo.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+
+        tb.addWidget(brand_dot)
+        tb.addSpacing(6)
+        tb.addLayout(brand_col)
+        tb.addSpacing(12)
+        tb.addWidget(ascii_logo)
+        tb.addSpacing(18)
+
+        self.import_btn = QPushButton("Import")
         self.import_btn.setObjectName("PrimaryButton")
+        self.import_btn.setToolTip("Import video  (I)")
         self.import_btn.clicked.connect(self.import_video)
 
-        self.settings_btn = QPushButton("⚙ Settings")
+        self.add_cluster_btn = QPushButton("Add cluster")
+        self.add_cluster_btn.setObjectName("GhostButton")
+        self.add_cluster_btn.setToolTip("Add all scenes from the active filter cluster")
+        self.add_cluster_btn.clicked.connect(self.add_filtered_cluster)
+        self.add_cluster_btn.setEnabled(False)
+
+        self.clear_tl_btn = QPushButton("Clear timeline")
+        self.clear_tl_btn.setObjectName("DangerButton")
+        self.clear_tl_btn.clicked.connect(self.clear_timeline)
+        self.clear_tl_btn.setEnabled(False)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("SecondaryButton")
+        self.cancel_btn.clicked.connect(self.cancel_active_job)
+        self.cancel_btn.setEnabled(False)
+
+        self.settings_btn = QPushButton("Settings")
         self.settings_btn.setObjectName("SettingsButton")
+        self.settings_btn.setToolTip("Settings  (S)")
         self.settings_btn.clicked.connect(self.open_settings)
 
-        self.export_btn = QPushButton("Merge & Export Timeline")
+        self.export_btn = QPushButton("Export")
         self.export_btn.setObjectName("PrimaryButton")
+        self.export_btn.setToolTip("Export timeline  (E)")
         self.export_btn.clicked.connect(self.export_timeline)
         self.export_btn.setEnabled(False)
 
-        toolbar_layout.addWidget(self.import_btn)
-        toolbar_layout.addStretch()
-        toolbar_layout.addWidget(self.settings_btn)
-        toolbar_layout.addWidget(self.export_btn)
+        self.duration_pill = QLabel("0.0s")
+        self.duration_pill.setObjectName("DurationPill")
+        self.duration_pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        main_layout.addWidget(toolbar_frame)
+        tb.addWidget(self.import_btn)
+        tb.addWidget(self.add_cluster_btn)
+        tb.addWidget(self.clear_tl_btn)
+        tb.addStretch()
+        tb.addWidget(self.duration_pill)
+        tb.addWidget(self.cancel_btn)
+        tb.addWidget(self.settings_btn)
+        tb.addWidget(self.export_btn)
+        root.addWidget(toolbar)
 
+        # Cluster filter row
+        self.chip_bar = QHBoxLayout()
+        self.chip_bar.setSpacing(8)
+        self.chip_host = QWidget()
+        self.chip_host.setLayout(self.chip_bar)
+        self.chip_scroll = QScrollArea()
+        self.chip_scroll.setWidgetResizable(True)
+        self.chip_scroll.setFixedHeight(44)
+        self.chip_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.chip_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.chip_scroll.setWidget(self.chip_host)
+        root.addWidget(self.chip_scroll)
+
+        # Splitter: media pool / timeline
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
 
-        self.media_pool_widget = QFrame()
-        self.media_pool_widget.setObjectName("PanelFrame")
-        media_pool_layout = QVBoxLayout(self.media_pool_widget)
-        media_pool_layout.setContentsMargins(15, 15, 15, 15)
+        # Media pool
+        pool = QFrame()
+        pool.setObjectName("PanelFrame")
+        pool_l = QVBoxLayout(pool)
+        pool_l.setContentsMargins(16, 14, 16, 14)
+        pool_l.setSpacing(10)
 
-        pool_title = QLabel("Media Pool")
+        pool_header = QHBoxLayout()
+        pool_title = QLabel("// MEDIA_POOL")
         pool_title.setObjectName("PanelTitle")
-        media_pool_layout.addWidget(pool_title)
+        self.pool_meta = QLabel("drop video · import · I")
+        self.pool_meta.setObjectName("PanelMeta")
+        pool_header.addWidget(pool_title)
+        pool_header.addStretch()
+        pool_header.addWidget(self.pool_meta)
+        pool_l.addLayout(pool_header)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.verticalScrollBar().setSingleStep(20)
+        self.scroll_area.verticalScrollBar().setSingleStep(24)
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent;")
         self.grid_layout = QGridLayout(self.scroll_content)
         self.grid_layout.setSpacing(12)
         self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.scroll_area.setWidget(self.scroll_content)
-        media_pool_layout.addWidget(self.scroll_area)
+        pool_l.addWidget(self.scroll_area)
+        self.splitter.addWidget(pool)
 
-        self.splitter.addWidget(self.media_pool_widget)
+        # Timeline
+        tl = QFrame()
+        tl.setObjectName("PanelFrame")
+        tl_l = QVBoxLayout(tl)
+        tl_l.setContentsMargins(16, 14, 16, 14)
+        tl_l.setSpacing(10)
 
-        self.timeline_widget = QFrame()
-        self.timeline_widget.setObjectName("PanelFrame")
-        timeline_layout = QVBoxLayout(self.timeline_widget)
-        timeline_layout.setContentsMargins(15, 15, 15, 15)
-
-        timeline_title = QLabel("Timeline Assembly")
-        timeline_title.setObjectName("PanelTitle")
-        timeline_layout.addWidget(timeline_title)
+        tl_header = QHBoxLayout()
+        tl_title = QLabel("// TIMELINE")
+        tl_title.setObjectName("PanelTitle")
+        self.tl_meta = QLabel("click · drag · del · ctrl+z")
+        self.tl_meta.setObjectName("PanelMeta")
+        tl_header.addWidget(tl_title)
+        tl_header.addStretch()
+        tl_header.addWidget(self.tl_meta)
+        tl_l.addLayout(tl_header)
 
         self.timeline_list = TimelineListWidget()
         self.timeline_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.timeline_list.setIconSize(QSize(90, 50))
+        self.timeline_list.setIconSize(QSize(96, 54))
         self.timeline_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.timeline_list.verticalScrollBar().setSingleStep(15)
-        self.timeline_delegate = TimelineDelegate(self.timeline_list)
-        self.timeline_list.setItemDelegate(self.timeline_delegate)
-        timeline_layout.addWidget(self.timeline_list)
+        self.timeline_list.verticalScrollBar().setSingleStep(16)
+        self.timeline_list.setItemDelegate(TimelineDelegate(self.timeline_list))
+        self.timeline_list.changed.connect(self._on_timeline_changed)
+        self.timeline_list.model().rowsRemoved.connect(lambda *_: self._on_timeline_changed())
+        tl_l.addWidget(self.timeline_list)
+        self.splitter.addWidget(tl)
+        self.splitter.setSizes([520, 260])
+        root.addWidget(self.splitter)
 
-        self.splitter.addWidget(self.timeline_widget)
-        self.splitter.setSizes([450, 250])
-
-        main_layout.addWidget(self.splitter)
-
+        # Status
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-
         self.status_label = QLabel(" Ready")
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedWidth(200)
-        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setFixedWidth(220)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.hide()
-
-        self.status_bar.addWidget(self.status_label)
+        self.status_bar.addWidget(self.status_label, 1)
         self.status_bar.addPermanentWidget(self.progress_bar)
 
     def apply_styles(self):
         self.setStyleSheet(get_stylesheet(self.is_dark_mode))
 
-    def open_settings(self):
-        dialog = SettingsDialog(self, self.is_dark_mode, self.eps, self.min_samples)
-        if dialog.exec():
-            self.is_dark_mode = dialog.is_dark
-            self.eps = dialog.eps_spin.value()
-            self.min_samples = dialog.min_samples_spin.value()
-            self.apply_styles()
-            logger.info(f"Settings updated: dark={self.is_dark_mode}, eps={self.eps}, min_samples={self.min_samples}")
+    def _bind_shortcuts(self):
+        QShortcut(QKeySequence("I"), self, activated=self.import_video)
+        QShortcut(QKeySequence("E"), self, activated=self.export_timeline)
+        QShortcut(QKeySequence("S"), self, activated=self.open_settings)
+        QShortcut(QKeySequence("Ctrl+Z"), self, activated=self.undo_timeline)
+        QShortcut(QKeySequence("Escape"), self, activated=self.cancel_active_job)
+        for n in range(10):
+            QShortcut(QKeySequence(str(n)), self, activated=lambda n=n: self._filter_by_number(n))
 
+    # ── Drag & drop ─────────────────────────────────────
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith((".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v")):
+                self.video_path = path
+                self.start_analysis()
+                break
+
+    # ── Model preload ───────────────────────────────────
+    def _set_status(self, text: str):
+        self.status_label.setText(text)
+
+    def _on_model_preload(self, ok, err):
+        # Called from background thread — hop to UI via signal
+        if ok:
+            self._bridge.status.emit(" Ready  ·  AI model loaded")
+        else:
+            self._bridge.status.emit(f" Model preload failed: {err}")
+
+    # ── Settings ────────────────────────────────────────
+    def open_settings(self):
+        dialog = SettingsDialog(
+            self, self.is_dark_mode, self.eps, self.min_samples, self.accurate_export
+        )
+        if not dialog.exec():
+            return
+
+        prev_eps, prev_min = self.eps, self.min_samples
+        self.is_dark_mode = dialog.is_dark
+        self.eps = dialog.eps_spin.value()
+        self.min_samples = dialog.min_samples_spin.value()
+        self.accurate_export = dialog.accurate_check.isChecked()
+        self.apply_styles()
+        get_stylesheet.cache_clear()
+        self.apply_styles()
+
+        # Recluster if params changed and we have cache
+        if self.scenes_data and (self.eps != prev_eps or self.min_samples != prev_min):
+            if self.ml_engine._cached_embeddings is not None:
+                self._start_recluster()
+            else:
+                self.status_label.setText(" Settings saved — re-import to recluster")
+
+    def _start_recluster(self):
+        self._set_busy(True, " Reclustering…")
+        self.recluster_worker = ReclusterWorker(
+            self.scenes_data, self.ml_engine, self.eps, self.min_samples
+        )
+        self.recluster_worker.progress_updated.connect(self.update_progress)
+        self.recluster_worker.finished_analysis.connect(self.on_analysis_finished)
+        self.recluster_worker.error_occurred.connect(self.on_analysis_error)
+        self.recluster_worker.start()
+
+    # ── Lifecycle ───────────────────────────────────────
     def closeEvent(self, event):
+        self.cancel_active_job()
         if self.worker and self.worker.isRunning():
-            self.worker.cancel()
-            self.worker.wait(5000)
+            self.worker.wait(4000)
         if self.export_worker and self.export_worker.isRunning():
-            self.export_worker.cancel()
-            self.export_worker.wait(5000)
+            self.export_worker.wait(4000)
         event.accept()
 
+    def cancel_active_job(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.status_label.setText(" Cancelling analysis…")
+        if self.export_worker and self.export_worker.isRunning():
+            self.export_worker.cancel()
+            self.status_label.setText(" Cancelling export…")
+
+    def _set_busy(self, busy, msg=""):
+        self.import_btn.setEnabled(not busy)
+        self.settings_btn.setEnabled(not busy)
+        self.export_btn.setEnabled(not busy and self.timeline_list.count() > 0)
+        self.add_cluster_btn.setEnabled(not busy and bool(self.scenes_data))
+        self.cancel_btn.setEnabled(busy)
+        if busy:
+            self.progress_bar.setValue(0)
+            self.progress_bar.show()
+            if msg:
+                self.status_label.setText(msg)
+        else:
+            self.progress_bar.hide()
+
+    # ── Import / analysis ───────────────────────────────
     def import_video(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Media", "", "Video Files (*.mp4 *.mkv *.avi *.mov)"
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Media", "",
+            "Video Files (*.mp4 *.mkv *.avi *.mov *.webm *.m4v)",
         )
-        if file_path:
-            self.video_path = file_path
+        if path:
+            self.video_path = path
             self.start_analysis()
 
     def start_analysis(self):
-        self.import_btn.setEnabled(False)
-        self.export_btn.setEnabled(False)
-        self.settings_btn.setEnabled(False)
-
-        self.progress_bar.setValue(0)
-        self.progress_bar.show()
-        self.status_label.setText(" Analyzing scenes...")
-
-        for i in reversed(range(self.grid_layout.count())):
-            widget_to_remove = self.grid_layout.itemAt(i).widget()
-            if widget_to_remove:
-                widget_to_remove.setParent(None)
-
+        if not self.video_path:
+            return
+        self._set_busy(True, " Analyzing scenes…")
+        self._clear_pool()
         self.timeline_list.clear()
-        self.timeline_scenes.clear()
+        self._undo_stack.clear()
+        self._update_duration()
+        self.cluster_filter = None
+        self._rebuild_chips([])
 
         temp_dir = os.path.join(tempfile.gettempdir(), "video_classifier_frames")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
-            logger.info(f"Cleaned temp directory: {temp_dir}")
 
-        self.worker = AnalysisWorker(self.video_path, eps=self.eps, min_samples=self.min_samples)
+        self.ml_engine.clear_cache()
+        self.worker = AnalysisWorker(
+            self.video_path, self.ml_engine, eps=self.eps, min_samples=self.min_samples
+        )
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.finished_analysis.connect(self.on_analysis_finished)
         self.worker.error_occurred.connect(self.on_analysis_error)
@@ -627,90 +1069,272 @@ class MainWindow(QMainWindow):
 
     def on_analysis_finished(self, clustered_scenes):
         self.scenes_data = clustered_scenes
-        self.scenes_data.sort(key=lambda x: x['cluster'])
-
-        cols = 6
-        for i, scene in enumerate(self.scenes_data):
-            thumb = SceneThumbnail(scene, self.video_path, self)
-            row = i // cols
-            col = i % cols
-            self.grid_layout.addWidget(thumb, row, col)
-
-        self.progress_bar.hide()
-        self.status_label.setText(" Analysis complete. Ready.")
-        self.import_btn.setEnabled(True)
-        self.settings_btn.setEnabled(True)
+        self.scenes_data.sort(key=lambda x: (x.get("cluster", -1), x.get("start_time", 0)))
+        self._rebuild_chips(self.scenes_data)
+        self._populate_pool()
+        self._set_busy(False)
+        n_c = len({s.get("cluster", -1) for s in self.scenes_data if s.get("cluster", -1) >= 0})
+        n_noise = sum(1 for s in self.scenes_data if s.get("cluster", -1) < 0)
+        self.pool_meta.setText(f"{len(self.scenes_data)} scenes  ·  {n_c} clusters  ·  {n_noise} noise")
+        self.status_label.setText(" Analysis complete")
+        self.add_cluster_btn.setEnabled(True)
+        name = os.path.basename(self.video_path or "")
+        self.setWindowTitle(f"Fracture  ·  {name}")
 
     def on_analysis_error(self, error_msg):
-        self.progress_bar.hide()
-        self.status_label.setText(" Error during execution.")
-        self.import_btn.setEnabled(True)
-        self.settings_btn.setEnabled(True)
+        self._set_busy(False)
+        self.status_label.setText(" Error")
         PremiumNotification(
             "System Error", str(error_msg), is_error=True,
-            parent=self, is_dark_mode=self.is_dark_mode
+            parent=self, is_dark_mode=self.is_dark_mode,
         ).exec()
 
+    def _clear_pool(self):
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+
+    def _populate_pool(self):
+        self._clear_pool()
+        scenes = self.scenes_data
+        if self.cluster_filter is not None:
+            scenes = [s for s in scenes if s.get("cluster", -1) == self.cluster_filter]
+
+        cols = max(4, self.scroll_area.viewport().width() // 196)
+        for i, scene in enumerate(scenes):
+            thumb = SceneThumbnail(
+                scene, self.video_path, self,
+                on_add=self.add_to_timeline,
+                on_add_cluster=self.add_cluster_to_timeline,
+            )
+            self.grid_layout.addWidget(thumb, i // cols, i % cols)
+        self.pool_meta.setText(
+            f"showing {len(scenes)} / {len(self.scenes_data)} scenes"
+            if self.cluster_filter is not None
+            else f"{len(self.scenes_data)} scenes"
+        )
+
+    def _rebuild_chips(self, scenes):
+        # Clear chip bar
+        while self.chip_bar.count():
+            item = self.chip_bar.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+
+        all_btn = QPushButton("All")
+        all_btn.setObjectName("ClusterChip")
+        all_btn.setProperty("selected", self.cluster_filter is None)
+        all_btn.clicked.connect(lambda: self._set_cluster_filter(None))
+        self.chip_bar.addWidget(all_btn)
+
+        clusters = sorted({s.get("cluster", -1) for s in scenes})
+        for c in clusters:
+            label = "noise" if c < 0 else f"C{c}"
+            count = sum(1 for s in scenes if s.get("cluster", -1) == c)
+            btn = QPushButton(f"{label} · {count}")
+            btn.setObjectName("ClusterChip")
+            btn.setProperty("selected", self.cluster_filter == c)
+            color = "#64748b" if c < 0 else CLUSTER_COLORS[c % len(CLUSTER_COLORS)]
+            if self.cluster_filter == c:
+                btn.setStyleSheet(
+                    f"QPushButton#ClusterChip {{ border-color: {color}; color: {color}; }}"
+                )
+            btn.clicked.connect(lambda _=False, cc=c: self._set_cluster_filter(cc))
+            # Double-click add: use custom context — also right-click on thumb
+            btn.setToolTip("Click to filter · Shift+click to add whole cluster")
+            self.chip_bar.addWidget(btn)
+
+        self.chip_bar.addStretch()
+        # Force style refresh
+        self.chip_host.style().unpolish(self.chip_host)
+        self.chip_host.style().polish(self.chip_host)
+
+    def _set_cluster_filter(self, cluster_id):
+        modifiers = self.app_keyboard_modifiers() if hasattr(self, "app_keyboard_modifiers") else None
+        from PyQt6.QtWidgets import QApplication
+        mods = QApplication.keyboardModifiers()
+        if mods & Qt.KeyboardModifier.ShiftModifier and cluster_id is not None:
+            self.add_cluster_to_timeline(cluster_id)
+            return
+        self.cluster_filter = cluster_id
+        self._rebuild_chips(self.scenes_data)
+        self._populate_pool()
+
+    def _filter_by_number(self, n):
+        if not self.scenes_data:
+            return
+        if n == 0:
+            self._set_cluster_filter(None)
+        else:
+            # 1-based cluster index among non-noise
+            clusters = sorted({s.get("cluster", -1) for s in self.scenes_data if s.get("cluster", -1) >= 0})
+            if 1 <= n <= len(clusters):
+                self._set_cluster_filter(clusters[n - 1])
+
+    # ── Timeline ────────────────────────────────────────
+    def _snapshot_timeline(self):
+        scenes = []
+        for i in range(self.timeline_list.count()):
+            item = self.timeline_list.item(i)
+            scenes.append(item.data(Qt.ItemDataRole.UserRole))
+        self._undo_stack.append(scenes)
+        if len(self._undo_stack) > 40:
+            self._undo_stack.pop(0)
+
+    def undo_timeline(self):
+        if not self._undo_stack:
+            return
+        scenes = self._undo_stack.pop()
+        self.timeline_list.clear()
+        for s in scenes:
+            self._append_timeline_item(s, push_undo=False)
+        self._on_timeline_changed()
+
     def add_to_timeline(self, scene_data):
-        self.timeline_scenes.append(scene_data)
+        # De-dupe by id + start_time
+        for i in range(self.timeline_list.count()):
+            existing = self.timeline_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if existing and existing.get("id") == scene_data.get("id") and \
+               abs(existing.get("start_time", 0) - scene_data.get("start_time", 0)) < 1e-3:
+                self.status_label.setText(" Scene already on timeline")
+                return
+        self._snapshot_timeline()
+        self._append_timeline_item(scene_data)
+        self._on_timeline_changed()
+
+    def _append_timeline_item(self, scene_data, push_undo=True):
+        cluster = scene_data.get("cluster", -1)
         item = QListWidgetItem()
         item.setText(
-            f"  Cluster {scene_data['cluster']}  |  {scene_data['duration']:.2f}s  "
-            f"[T: {scene_data['start_time']:.2f}s]"
+            f"  {'noise' if cluster < 0 else f'C{cluster}'}   "
+            f"{scene_data['duration']:.2f}s   "
+            f"[{scene_data['start_time']:.2f}s → {scene_data['end_time']:.2f}s]"
         )
-        item.setIcon(QIcon(scene_data['frame_path']))
+        if os.path.isfile(scene_data.get("frame_path", "")):
+            item.setIcon(QIcon(scene_data["frame_path"]))
         item.setData(Qt.ItemDataRole.UserRole, scene_data)
         self.timeline_list.addItem(item)
-        self.export_btn.setEnabled(True)
 
-    def export_timeline(self):
+    def add_cluster_to_timeline(self, cluster_id):
+        if cluster_id is None:
+            return
+        members = [s for s in self.scenes_data if s.get("cluster", -1) == cluster_id]
+        if not members:
+            return
+        self._snapshot_timeline()
+        existing_ids = set()
+        for i in range(self.timeline_list.count()):
+            e = self.timeline_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if e:
+                existing_ids.add(e.get("id"))
+        added = 0
+        for s in sorted(members, key=lambda x: x.get("start_time", 0)):
+            if s.get("id") in existing_ids:
+                continue
+            self._append_timeline_item(s, push_undo=False)
+            added += 1
+        self._on_timeline_changed()
+        self.status_label.setText(f" Added {added} scenes from cluster {cluster_id}")
+
+    def add_filtered_cluster(self):
+        if self.cluster_filter is None:
+            # Add all visible? prefer prompt via status
+            self.status_label.setText(" Filter a cluster first (or Shift+click a chip)")
+            return
+        self.add_cluster_to_timeline(self.cluster_filter)
+
+    def clear_timeline(self):
         if self.timeline_list.count() == 0:
             return
+        self._snapshot_timeline()
+        self.timeline_list.clear()
+        self._on_timeline_changed()
 
+    def _on_timeline_changed(self):
+        count = self.timeline_list.count()
+        self.export_btn.setEnabled(count > 0)
+        self.clear_tl_btn.setEnabled(count > 0)
+        self._update_duration()
+
+    def _update_duration(self):
+        total = 0.0
+        for i in range(self.timeline_list.count()):
+            s = self.timeline_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if s:
+                total += float(s.get("duration", 0))
+        mins = int(total // 60)
+        secs = total % 60
+        self.duration_pill.setText(f"{mins}:{secs:05.2f}" if mins else f"{secs:.2f}s")
+        self.tl_meta.setText(
+            f"{self.timeline_list.count()} clips  ·  drag to reorder  ·  Ctrl+Z undo"
+        )
+
+    def _ordered_scenes(self):
+        out = []
+        for i in range(self.timeline_list.count()):
+            s = self.timeline_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if s:
+                out.append(s)
+        return out
+
+    # ── Export ──────────────────────────────────────────
+    def export_timeline(self):
+        if self.timeline_list.count() == 0 or not self.video_path:
+            return
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Export Render", "", "MP4 Video (*.mp4)"
         )
-
         if not output_path:
             return
+        if not output_path.lower().endswith(".mp4"):
+            output_path += ".mp4"
 
-        ordered_scenes = []
-        for i in range(self.timeline_list.count()):
-            item = self.timeline_list.item(i)
-            scene = item.data(Qt.ItemDataRole.UserRole)
-            ordered_scenes.append(scene)
-
-        self.import_btn.setEnabled(False)
-        self.export_btn.setEnabled(False)
-        self.settings_btn.setEnabled(False)
-        self.status_label.setText(" Rendering timeline export...")
-        self.progress_bar.setValue(0)
-        self.progress_bar.show()
-
-        self.export_worker = ExportWorker(self.video_path, ordered_scenes, output_path)
+        ordered = self._ordered_scenes()
+        self._set_busy(True, " Rendering export…")
+        self.export_worker = ExportWorker(
+            self.video_path, ordered, output_path, accurate=self.accurate_export
+        )
         self.export_worker.progress_updated.connect(self.update_progress)
         self.export_worker.finished_export.connect(self.on_export_finished)
         self.export_worker.error_occurred.connect(self.on_export_error)
         self.export_worker.start()
 
     def on_export_finished(self):
-        self.progress_bar.hide()
-        self.status_label.setText(" Ready.")
-        self.import_btn.setEnabled(True)
-        self.export_btn.setEnabled(True)
-        self.settings_btn.setEnabled(True)
+        self._set_busy(False)
+        self.status_label.setText(" Export complete")
         PremiumNotification(
             "Render Complete", "Export completed successfully.",
-            is_error=False, parent=self, is_dark_mode=self.is_dark_mode
+            is_error=False, parent=self, is_dark_mode=self.is_dark_mode,
         ).exec()
 
     def on_export_error(self, error_msg):
-        self.progress_bar.hide()
-        self.status_label.setText(" Export failed.")
-        self.import_btn.setEnabled(True)
-        self.export_btn.setEnabled(True)
-        self.settings_btn.setEnabled(True)
+        self._set_busy(False)
+        self.status_label.setText(" Export failed")
         PremiumNotification(
             "Render Error", str(error_msg), is_error=True,
-            parent=self, is_dark_mode=self.is_dark_mode
+            parent=self, is_dark_mode=self.is_dark_mode,
         ).exec()
+
+    # ── Project save / load (lightweight) ───────────────
+    def save_project(self):
+        if not self.video_path:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "Fracture Project (*.fracture.json)")
+        if not path:
+            return
+        data = {
+            "video_path": self.video_path,
+            "eps": self.eps,
+            "min_samples": self.min_samples,
+            "accurate_export": self.accurate_export,
+            "timeline": self._ordered_scenes(),
+            "scenes": self.scenes_data,
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        self.status_label.setText(f" Project saved · {os.path.basename(path)}")

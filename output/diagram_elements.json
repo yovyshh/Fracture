@@ -1,0 +1,233 @@
+[
+  {
+    "id": "rect_0",
+    "type": "rectangle",
+    "x": 40, "y": 30,
+    "width": 280, "height": 64,
+    "text": "Input Video\n(MP4 / MKV / AVI / MOV)",
+    "backgroundColor": "#DBEAFE",
+    "strokeColor": "#2563EB",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_1",
+    "type": "rectangle",
+    "x": 40, "y": 124,
+    "width": 280, "height": 64,
+    "text": "ffprobe\nI-frame Detection",
+    "backgroundColor": "#D1FAE5",
+    "strokeColor": "#059669",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_2",
+    "type": "rectangle",
+    "x": 40, "y": 218,
+    "width": 280, "height": 64,
+    "text": "ffmpeg\nFrame Extraction",
+    "backgroundColor": "#D1FAE5",
+    "strokeColor": "#059669",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_3",
+    "type": "rectangle",
+    "x": 40, "y": 332,
+    "width": 280, "height": 64,
+    "text": "CLIP\nEmbeddings (512-dim)",
+    "backgroundColor": "#EDE9FE",
+    "strokeColor": "#7C3AED",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_4",
+    "type": "rectangle",
+    "x": 40, "y": 446,
+    "width": 280, "height": 64,
+    "text": "DBSCAN\nScene Clustering",
+    "backgroundColor": "#EDE9FE",
+    "strokeColor": "#7C3AED",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_5",
+    "type": "rectangle",
+    "x": 40, "y": 540,
+    "width": 280, "height": 64,
+    "text": "Media Pool\nScene Grid",
+    "backgroundColor": "#DBEAFE",
+    "strokeColor": "#2563EB",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_6",
+    "type": "rectangle",
+    "x": 40, "y": 634,
+    "width": 280, "height": 64,
+    "text": "Timeline\nAssembly",
+    "backgroundColor": "#DBEAFE",
+    "strokeColor": "#2563EB",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "rect_7",
+    "type": "rectangle",
+    "x": 40, "y": 728,
+    "width": 280, "height": 64,
+    "text": "FFmpeg Concat\nLossless Export",
+    "backgroundColor": "#FED7AA",
+    "strokeColor": "#EA580C",
+    "strokeWidth": 2,
+    "roundness": {"type": 3}
+  },
+  {
+    "id": "arrow_0",
+    "type": "arrow",
+    "x": 180, "y": 94,
+    "startElementId": "rect_0",
+    "endElementId": "rect_1",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_1",
+    "type": "arrow",
+    "x": 180, "y": 188,
+    "startElementId": "rect_1",
+    "endElementId": "rect_2",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_2",
+    "type": "arrow",
+    "x": 180, "y": 282,
+    "startElementId": "rect_2",
+    "endElementId": "rect_3",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_3",
+    "type": "arrow",
+    "x": 180, "y": 396,
+    "startElementId": "rect_3",
+    "endElementId": "rect_4",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_4",
+    "type": "arrow",
+    "x": 180, "y": 510,
+    "startElementId": "rect_4",
+    "endElementId": "rect_5",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_5",
+    "type": "arrow",
+    "x": 180, "y": 604,
+    "startElementId": "rect_5",
+    "endElementId": "rect_6",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "arrow_6",
+    "type": "arrow",
+    "x": 180, "y": 698,
+    "startElementId": "rect_6",
+    "endElementId": "rect_7",
+    "strokeColor": "#888888",
+    "strokeWidth": 2,
+    "endArrowhead": "arrow"
+  },
+  {
+    "id": "ann_0",
+    "type": "text",
+    "x": 370, "y": 46,
+    "text": "User imports a video file",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_1",
+    "type": "text",
+    "x": 370, "y": 140,
+    "text": "Reads I-frame packet headers — no decoding",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_2",
+    "type": "text",
+    "x": 370, "y": 234,
+    "text": "8 parallel workers, semaphore(4)",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_3",
+    "type": "text",
+    "x": 370, "y": 348,
+    "text": "Vision Transformer → 512-dim embedding",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_4",
+    "type": "text",
+    "x": 370, "y": 462,
+    "text": "StandardScaler + eps=0.5, min_samples=2",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_5",
+    "type": "text",
+    "x": 370, "y": 556,
+    "text": "Sorted by cluster_id, hover preview 15 FPS",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_6",
+    "type": "text",
+    "x": 370, "y": 650,
+    "text": "Drag-to-reorder, inline delete + shortcuts",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "ann_7",
+    "type": "text",
+    "x": 370, "y": 744,
+    "text": "FFmpeg concat demuxer, -c copy (lossless)",
+    "strokeColor": "#555555",
+    "fontSize": 13
+  },
+  {
+    "id": "title_text",
+    "type": "text",
+    "x": 40, "y": 0,
+    "text": "Fracture — AI Video Processing Pipeline",
+    "strokeColor": "#111111",
+    "fontSize": 20,
+    "fontWeight": "bold"
+  }
+]
