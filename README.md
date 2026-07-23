@@ -1,81 +1,247 @@
-# Fracture
+<pre align="center">
+█████╗█████╗  █████╗  █████╗██████████╗██╗   ██╗██████╗ ███████╗
+██╔══╝██╔══██╗██╔══██╗██╔══╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+████╗ ██████╔╝███████║██║      ██║   ██║   ██║██████╔╝█████╗  
+██╔═╝ ██╔══██╗██╔══██║██║      ██║   ██║   ██║██╔══██╗██╔══╝  
+██║   ██║  ██║██║  ██║╚█████╗  ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚════╝  ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+</pre>
 
-**Fracture** is a local, AI-powered desktop video editing assistant for fast scene splitting and intelligent frame clustering. Built in Python with a Hermes-inspired PyQt6 dark UI.
+<h1 align="center">Fracture</h1>
 
-## Features
+<p align="center">
+  <b>Local AI video scene splitter · cluster · curate · lossless export</b>
+</p>
 
-- **Fast keyframe extraction** — `ffprobe` I-frames (no full decode)
-- **CLIP + DBSCAN clustering** — L2-normalized embeddings, cosine distance
-- **Instant recluster** — tweak epsilon / min samples without re-importing
-- **Hermes-style UI** — slate canvas, cyan accents, cluster chips, duration pill
-- **Cluster bulk-add** — Shift+click a chip, or right-click a thumbnail
-- **Timeline** — reorder, de-dupe, undo (Ctrl+Z), duration total
-- **Cancelable jobs** — analysis & export (Esc)
-- **Lossless export** — FFmpeg concat `-c copy` (optional accurate re-encode)
-- **Drag-and-drop import**
-- **Model preload** on startup
-- **Project save** (`.fracture.json`)
+<p align="center">
+  <a href="https://github.com/yovyshh/Fracture"><img src="https://img.shields.io/badge/GitHub-yovyshh%2FFracture-0047FF?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="#stack"><img src="https://img.shields.io/badge/Stack-Python%20%7C%20PyQt6%20%7C%20CLIP-111111?style=for-the-badge" alt="Stack"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License: MIT"></a>
+  <a href="#pipeline"><img src="https://img.shields.io/badge/AI-CLIP%20%2B%20DBSCAN-a855f7?style=for-the-badge" alt="AI"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Mode-Offline%20%2F%20Local-f59e0b?style=for-the-badge" alt="Offline"></a>
+</p>
 
-## Stack
+---
 
-- **GUI:** PyQt6
-- **Video:** FFmpeg / ffprobe, OpenCV
-- **ML:** `sentence-transformers` (`clip-ViT-B-32`), scikit-learn
+**Fracture** is a desktop video editing assistant that turns long footage into a curated master without cloud uploads and without a quality tax.
 
-## Requirements
+It finds scene boundaries from **I-frames** (near-instant), embeds thumbnails with **CLIP**, groups look-alikes with **DBSCAN**, and lets you assemble a timeline — then stitches your selection with **FFmpeg stream-copy** so the bits that leave match the bits that came in.
 
-- Windows (primary), FFmpeg + ffprobe on `PATH`
-- Python 3.10–3.12 recommended (3.14 venv may need rebuilt wheels)
+Black terminal UI. Electric blue accents. Built for speed on a normal Windows box.
+
+```
+import → detect → embed → cluster → curate → export
+   │        │        │        │        │        └── ffmpeg -c copy (lossless)
+   │        │        │        │        └── media pool + timeline
+   │        │        │        └── cosine DBSCAN (tunable eps)
+   │        │        └── clip-ViT-B-32 (cached, optional GPU)
+   │        └── ffprobe I-frames + 224px mid-scene JPEGs
+   └── drag-drop / file dialog / key I
+```
+
+<table>
+<tr>
+  <td width="28%"><b>Blazing scene split</b></td>
+  <td>Uses <code>ffprobe</code> packet flags — no full decode. Caps &amp; subsamples dense keyframe sections so long videos stay snappy.</td>
+</tr>
+<tr>
+  <td><b>Semantic clustering</b></td>
+  <td>CLIP vision embeddings (L2-normalized) + cosine DBSCAN. No fixed <code>K</code>. Noise labeled <code>-1</code>. Tune eps / min samples live.</td>
+</tr>
+<tr>
+  <td><b>Instant recluster</b></td>
+  <td>Embeddings are cached. Change Settings → Apply and clusters refresh without re-extracting frames or reloading the model.</td>
+</tr>
+<tr>
+  <td><b>Human-in-the-loop timeline</b></td>
+  <td>Click scenes into a drag-reorder queue. Cluster chips filter the pool. Shift+click a chip to bulk-add. De-dupe, undo, duration pill.</td>
+</tr>
+<tr>
+  <td><b>Lossless export</b></td>
+  <td>FFmpeg concat demuxer with <code>-c copy</code>. Optional accurate re-encode mode for frame-perfect cuts. Cancelable. No pipe deadlocks.</td>
+</tr>
+<tr>
+  <td><b>Hermes-black UI</b></td>
+  <td>Pure black canvas, electric blue <code>#0047FF</code>, monospace chrome, ASCII brand mark, sharp corners. Looks like a terminal that edits video.</td>
+</tr>
+<tr>
+  <td><b>Non-blocking workers</b></td>
+  <td>Analysis, export, and hover preview each run on QThreads. Esc cancels. Model preloads in the background on launch.</td>
+</tr>
+<tr>
+  <td><b>Fully local</b></td>
+  <td>No account. No upload. FFmpeg on PATH + a Python venv. After the first CLIP download, you can go offline.</td>
+</tr>
+</table>
+
+---
+
+## Quick Start
+
+### Requirements
+
+| Need | Notes |
+|------|--------|
+| **OS** | Windows 10/11 (primary) |
+| **Python** | 3.10–3.12 recommended |
+| **FFmpeg** | `ffmpeg` + `ffprobe` on your `PATH` |
+| **GPU** *(optional)* | CUDA / MPS auto-detected for faster CLIP encode |
+
+### Install
 
 ```bash
+git clone https://github.com/yovyshh/Fracture.git
+cd Fracture
+
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate          # Windows
 pip install -r requirements.txt
+```
+
+### Run
+
+```bash
 python main.py
 ```
 
-Or double-click `Fracture.vbs` for a windowless launch.
+Or double-click **`Fracture.vbs`** for a windowless launch (`pythonw`).
+
+> **First run:** CLIP (`clip-ViT-B-32`) downloads once via Hugging Face, then stays cached. Status bar shows when the model is ready.
+
+---
 
 ## How to use
 
-1. **Import** video (button, `I`, or drag-drop)
-2. Wait for analysis — scenes appear in the Media Pool
-3. **Filter** by cluster chips; **Shift+click** a chip to add the whole cluster
-4. **Click** scenes onto the Timeline; drag to reorder; `Del` to remove; `Ctrl+Z` undo
-5. **Settings** (`S`) — theme, DBSCAN eps / min samples, accurate export
-6. **Export** (`E`) — lossless master MP4
+1. **Import** a video — button, drag-and-drop, or press `I`  
+2. Wait for analysis — thumbnails land in the **Media Pool**  
+3. **Filter** with cluster chips · **Shift+click** a chip to add the whole cluster  
+4. **Click** scenes onto the **Timeline** · drag to reorder · `Del` / red **DEL** to remove · `Ctrl+Z` undo  
+5. Open **Settings** (`S`) — theme, DBSCAN `eps` / `min_samples`, accurate export toggle  
+6. **Export** (`E`) — lossless master MP4  
 
-## Shortcuts
+### Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `I` | Import |
-| `E` | Export |
+| `I` | Import video |
+| `E` | Export timeline |
 | `S` | Settings |
 | `Esc` | Cancel running job |
-| `Ctrl+Z` | Undo timeline |
-| `1–9` | Filter cluster N |
+| `Ctrl+Z` | Undo timeline change |
 | `0` | Show all clusters |
+| `1`–`9` | Filter cluster N |
+| `Del` / `Backspace` | Remove selected timeline clips |
+
+---
+
+## Pipeline
+
+```
+┌────────────┐   ┌─────────────┐   ┌──────────────┐   ┌────────────┐
+│  ffprobe   │ → │   ffmpeg    │ → │ CLIP ViT-B/32│ → │   DBSCAN   │
+│  I-frames  │   │ 224px JPEG  │   │  512-d emb   │   │   cosine   │
+└────────────┘   └─────────────┘   └──────────────┘   └────────────┘
+                                                           │
+                     ┌──────────────┐   ┌──────────────────┘
+                     │   Timeline   │ ← │   Media Pool
+                     └──────┬───────┘
+                            ▼
+                   ┌─────────────────┐
+                   │ ffmpeg concat   │
+                   │ -c copy (or x264│
+                   │  accurate mode) │
+                   └─────────────────┘
+```
+
+Diagrams & architecture HTML live under [`output/`](./output/).
+
+---
+
+## Stack
+
+| Layer | Tech |
+|-------|------|
+| **GUI** | PyQt6 · Fusion · custom QSS (black / blue mono) |
+| **Video** | FFmpeg · ffprobe · OpenCV (hover preview) |
+| **ML** | `sentence-transformers` · CLIP ViT-B/32 · scikit-learn DBSCAN |
+| **Packaging** | PyInstaller spec · VBS launcher · optional one-file exe |
+
+---
 
 ## Project layout
 
-```
+```text
 Fracture/
-├── main.py               # Entry + logging
-├── ui_components.py      # Hermes-themed PyQt6 UI
-├── video_processor.py    # I-frame detect + frame extract
-├── ml_engine.py          # CLIP embeddings + cosine DBSCAN
-├── exporter.py           # Concat export (cancelable)
+├── main.py                 # Entry + rotating logs (~/.fracture/)
+├── ui_components.py        # Window, workers, timeline, theme
+├── video_processor.py      # I-frame detect + parallel extract
+├── ml_engine.py            # CLIP encode + cosine clustering
+├── exporter.py             # Concat export (cancel-safe)
 ├── requirements.txt
+├── Fracture.spec           # PyInstaller
+├── Fracture.vbs            # Silent Windows launch
 ├── icons/
+├── output/                 # Pipeline diagrams + architecture HTML
 └── README.md
 ```
 
+---
+
 ## Clustering notes
 
-Default `eps=0.35` with **cosine** metric on L2-normalized CLIP vectors.  
-Lower eps → tighter clusters. Higher → broader groups. Noise labeled `-1`.
+- Default **`eps = 0.35`**, **`min_samples = 2`**, metric **`cosine`** on L2-normalized embeddings  
+- Lower eps → tighter / more clusters · higher eps → broader groups  
+- Noise scenes show as **`noise`** in the pool  
+- Scene count is capped (~120) with even subsample on dense I-frame footage so analysis stays interactive  
+
+---
+
+## Build a standalone exe *(optional)*
+
+With PyInstaller and deps installed:
+
+```bash
+pyinstaller Fracture.spec
+# → dist/Fracture.exe   (local only — not committed; exceeds GitHub size limits)
+```
+
+Keep FFmpeg on PATH for the packaged app as well.
+
+---
+
+## Docs & decks
+
+| Asset | What |
+|-------|------|
+| [`output/fracture-architecture.html`](./output/fracture-architecture.html) | Interactive architecture diagram |
+| [`Fracture_Architecture.pptx`](./Fracture_Architecture.pptx) | Architecture slide deck |
+| [`Fracture_Methodology.pptx`](./Fracture_Methodology.pptx) | Methodology deck |
+| [`output/fracture_pipeline.png`](./output/fracture_pipeline.png) | Pipeline graphic |
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| “FFmpeg not found” | Install FFmpeg and add it to system `PATH`, then restart the app |
+| First analysis slow | CLIP model downloading / loading — only once; watch status bar |
+| Export stuck (old builds) | Update to latest `exporter.py` (progress-file + stderr drain). Kill orphaned `ffmpeg.exe` if needed |
+| Clusters look wrong | Settings → lower/raise **eps** → Apply (instant recluster if embeddings cached) |
+| Python 3.14 + broken numpy | Prefer 3.11/3.12 venv; rebuild wheels for your interpreter |
+
+Logs: `~/.fracture/fracture.log` (Windows: `%USERPROFILE%\.fracture\fracture.log`).
+
+---
 
 ## License
 
-Project-local use.
+MIT — free to use, modify, and ship. See [`LICENSE`](./LICENSE) if present; otherwise treat as MIT unless noted.
+
+---
+
+<p align="center">
+  <code>// local · offline · lossless</code><br>
+  <sub>Fracture — split the cut, keep the quality.</sub>
+</p>
