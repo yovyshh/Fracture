@@ -6,12 +6,31 @@ import shutil
 import tempfile
 import threading
 import time
-from collections import defaultdict
 from functools import lru_cache
 
 import cv2
-from PyQt6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    pyqtSignal,
+)
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -21,6 +40,8 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -34,6 +55,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QStyledItemDelegate,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -47,121 +69,148 @@ logger = logging.getLogger(__name__)
 
 class _UiBridge(QObject):
     """Marshal background-thread callbacks onto the Qt UI thread."""
+
     status = pyqtSignal(str)
 
 
-# Cluster accents — electric blue family on pure black
+# SpotiFLAC-inspired soft accents
 CLUSTER_COLORS = [
-    "#3b82f6", "#60a5fa", "#93c5fd", "#2563eb", "#1d4ed8",
-    "#38bdf8", "#7dd3fc", "#a5b4fc", "#818cf8", "#c4b5fd",
+    "#22c55e",
+    "#4ade80",
+    "#86efac",
+    "#16a34a",
+    "#15803d",
+    "#34d399",
+    "#2dd4bf",
+    "#38bdf8",
+    "#a78bfa",
+    "#f472b6",
 ]
 
 
-ASCII_LOGO = r"""
- ╔═╗╦═╗╔═╗╔═╗╔╦╗╦ ╦╦═╗╔═╗
- ╠╣ ╠╦╝╠═╣║   ║ ║ ║╠╦╝║╣
- ╚  ╩╚═╩ ╩╚═╝ ╩ ╚═╝╩╚═╚═╝
-""".strip("\n")
+def _shadow(blur=24, dy=6, alpha=80):
+    eff = QGraphicsDropShadowEffect()
+    eff.setBlurRadius(blur)
+    eff.setOffset(0, dy)
+    eff.setColor(QColor(0, 0, 0, alpha))
+    return eff
+
+
+def fade_in(widget, duration=280, delay=0):
+    """Opacity 0→1 ease-out. Keeps a ref on the widget to avoid GC."""
+    effect = QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    effect.setOpacity(0.0)
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(duration)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    if delay:
+        QTimer.singleShot(delay, anim.start)
+    else:
+        anim.start()
+    widget._fade_anim = anim
+    return anim
 
 
 @lru_cache(maxsize=2)
 def get_stylesheet(is_dark_mode: bool) -> str:
-    """
-    Pure-black Hermes-inspired terminal UI.
-    Electric blue (#0040FF family) + white on #000000 — mono type.
-    """
+    """SpotiFLAC-inspired soft dark cards, green primary, rounded chrome."""
     if is_dark_mode:
-        bg = "#000000"
-        panel = "#0a0a0a"
-        elevated = "#111111"
-        border = "#1a1a1a"
-        input_border = "#2a2a2a"
-        text = "#f5f5f5"
-        muted = "#6b6b6b"
-        primary = "#0047FF"       # electric Hermes blue
-        primary_hi = "#3D7CFF"
-        primary_text = "#ffffff"
-        btn_bg = "#0f0f0f"
-        btn_hover = "#1a1a1a"
-        danger = "#ff4d6d"
-        success = "#3D7CFF"
-        scroll = "#2a2a2a"
-        mono = '"Cascadia Mono", "Consolas", "JetBrains Mono", "Courier New", monospace'
+        bg = "#121212"
+        panel = "#181818"
+        elevated = "#242424"
+        hover = "#2a2a2a"
+        border = "#2a2a2a"
+        input_border = "#333333"
+        text = "#fafafa"
+        muted = "#a1a1aa"
+        primary = "#22c55e"
+        primary_hi = "#4ade80"
+        primary_text = "#052e16"
+        danger = "#ef4444"
+        scroll = "#3f3f46"
+        font = '"Segoe UI", "Google Sans", system-ui, sans-serif'
     else:
-        # Light inverted: white page, blue ink (closer to hermes.com lower section)
-        bg = "#ffffff"
-        panel = "#f7f7f7"
-        elevated = "#eeeeee"
-        border = "#e0e0e0"
-        input_border = "#cccccc"
-        text = "#0a0a0a"
-        muted = "#666666"
-        primary = "#0047FF"
-        primary_hi = "#0033CC"
+        bg = "#fafafa"
+        panel = "#ffffff"
+        elevated = "#f4f4f5"
+        hover = "#e4e4e7"
+        border = "#e4e4e7"
+        input_border = "#d4d4d8"
+        text = "#18181b"
+        muted = "#71717a"
+        primary = "#16a34a"
+        primary_hi = "#22c55e"
         primary_text = "#ffffff"
-        btn_bg = "#f0f0f0"
-        btn_hover = "#e5e5e5"
-        danger = "#cc0033"
-        success = "#0047FF"
-        scroll = "#cccccc"
-        mono = '"Cascadia Mono", "Consolas", "JetBrains Mono", "Courier New", monospace'
+        danger = "#dc2626"
+        scroll = "#a1a1aa"
+        font = '"Segoe UI", "Google Sans", system-ui, sans-serif'
 
     return f"""
         QMainWindow, QDialog {{
             background-color: {bg};
         }}
         QWidget {{
-            font-family: {mono};
+            font-family: {font};
             color: {text};
-            font-size: 12px;
+            font-size: 13px;
+        }}
+        #Sidebar {{
+            background-color: {panel};
+            border-right: 1px solid {border};
+        }}
+        QToolButton#NavBtn {{
+            background: transparent;
+            border: none;
+            border-radius: 10px;
+            color: {muted};
+            padding: 0;
+            min-width: 40px; max-width: 40px;
+            min-height: 40px; max-height: 40px;
+            font-size: 16px;
+        }}
+        QToolButton#NavBtn:hover {{
+            background-color: rgba(34, 197, 94, 0.12);
+            color: {primary};
+        }}
+        QToolButton#NavBtn[active="true"] {{
+            background-color: rgba(34, 197, 94, 0.18);
+            color: {primary};
+        }}
+        #ContentRoot {{ background-color: {bg}; }}
+        #HeroTitle {{
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: {text};
+        }}
+        #HeroSub {{ color: {muted}; font-size: 13px; }}
+        #VersionBadge {{
+            background-color: {primary};
+            color: {primary_text};
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-size: 11px;
+            font-weight: 700;
         }}
         #Toolbar, #PanelFrame {{
             background-color: {panel};
             border: 1px solid {border};
-            border-radius: 0px;
-        }}
-        #BrandDot {{
-            background-color: {primary};
-            border-radius: 0px;
-            min-width: 8px;
-            max-width: 8px;
-            min-height: 8px;
-            max-height: 8px;
-        }}
-        #BrandTitle {{
-            color: {text};
-            font-size: 14px;
-            font-weight: 700;
-            letter-spacing: 3px;
-        }}
-        #BrandSub {{
-            color: {muted};
-            font-size: 10px;
-            letter-spacing: 1px;
-        }}
-        #AsciiLogo {{
-            color: {primary};
-            font-size: 9px;
-            font-weight: 700;
-            line-height: 11px;
+            border-radius: 14px;
         }}
         #PanelTitle {{
-            color: {primary};
-            font-size: 11px;
+            color: {text};
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 2px;
         }}
-        #PanelMeta {{
-            color: {muted};
-            font-size: 10px;
-        }}
+        #PanelMeta {{ color: {muted}; font-size: 12px; }}
         QPushButton {{
-            padding: 7px 14px;
-            border-radius: 0px;
-            font-weight: 700;
-            font-size: 11px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 12px;
         }}
         QPushButton#PrimaryButton {{
             background-color: {primary};
@@ -178,12 +227,12 @@ def get_stylesheet(is_dark_mode: bool) -> str:
             border: 1px solid {input_border};
         }}
         QPushButton#SecondaryButton, QPushButton#SettingsButton, QPushButton#GhostButton {{
-            background-color: {btn_bg};
+            background-color: {elevated};
             color: {text};
             border: 1px solid {input_border};
         }}
         QPushButton#SecondaryButton:hover, QPushButton#SettingsButton:hover, QPushButton#GhostButton:hover {{
-            background-color: {btn_hover};
+            background-color: {hover};
             border: 1px solid {primary};
             color: {primary};
         }}
@@ -199,73 +248,60 @@ def get_stylesheet(is_dark_mode: bool) -> str:
         }}
         QPushButton#DangerButton:hover {{
             border-color: {danger};
-            background-color: {elevated};
+            background-color: rgba(239, 68, 68, 0.12);
         }}
         QProgressBar {{
-            border: 1px solid {border};
+            border: none;
             background-color: {elevated};
-            border-radius: 0px;
-            max-height: 8px;
-            min-height: 8px;
-            text-align: center;
+            border-radius: 6px;
+            max-height: 8px; min-height: 8px;
         }}
         QProgressBar::chunk {{
             background-color: {primary};
-            border-radius: 0px;
+            border-radius: 6px;
         }}
         QListWidget {{
             background-color: {bg};
             border: 1px solid {border};
-            border-radius: 0px;
-            padding: 6px;
+            border-radius: 12px;
+            padding: 8px;
             outline: none;
-            font-family: {mono};
         }}
         QListWidget::item {{
-            padding: 8px;
+            padding: 10px;
             padding-right: 56px;
             background-color: {panel};
             border: 1px solid {border};
-            border-radius: 0px;
-            margin-bottom: 4px;
+            border-radius: 10px;
+            margin-bottom: 6px;
             color: {text};
-            font-size: 11px;
+            font-size: 12px;
         }}
         QListWidget::item:selected {{
             border: 1px solid {primary};
-            background-color: {elevated};
-            color: {primary};
+            background-color: rgba(34, 197, 94, 0.10);
         }}
-        QScrollArea {{
-            border: none;
-            background-color: transparent;
-        }}
+        QListWidget::item:hover {{ border-color: {primary}; }}
+        QScrollArea {{ border: none; background-color: transparent; }}
         QScrollBar:vertical {{
-            background: {bg};
-            width: 8px;
-            margin: 0;
+            background: transparent; width: 8px; margin: 2px;
         }}
         QScrollBar::handle:vertical {{
-            background: {scroll};
-            min-height: 24px;
+            background: {scroll}; border-radius: 4px; min-height: 28px;
         }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-            height: 0;
-        }}
-        QSplitter::handle {{
-            background-color: {border};
-            height: 2px;
-        }}
+        QScrollBar::handle:vertical:hover {{ background: {primary}; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        QSplitter::handle {{ background-color: transparent; height: 8px; }}
         QStatusBar {{
             background-color: {panel};
             color: {muted};
             border-top: 1px solid {border};
-            font-size: 10px;
+            font-size: 12px;
         }}
         SceneThumbnail {{
             background-color: {panel};
             border: 1px solid {input_border};
-            border-radius: 0px;
+            border-radius: 12px;
         }}
         SceneThumbnail:hover {{
             border: 1px solid {primary};
@@ -274,24 +310,23 @@ def get_stylesheet(is_dark_mode: bool) -> str:
         QDoubleSpinBox, QSpinBox, QComboBox {{
             background-color: {bg};
             border: 1px solid {input_border};
-            border-radius: 0px;
-            padding: 5px 8px;
+            border-radius: 10px;
+            padding: 6px 10px;
             color: {text};
-            min-height: 16px;
-            font-family: {mono};
+            min-height: 18px;
         }}
-        QComboBox::drop-down {{ border: none; width: 18px; }}
+        QComboBox::drop-down {{ border: none; width: 20px; }}
         QComboBox QAbstractItemView {{
             background: {panel};
             color: {text};
-            selection-background-color: {primary};
-            selection-color: {primary_text};
+            selection-background-color: rgba(34, 197, 94, 0.25);
             border: 1px solid {border};
+            border-radius: 8px;
         }}
-        QCheckBox {{ color: {text}; spacing: 8px; font-family: {mono}; }}
+        QCheckBox {{ color: {text}; spacing: 8px; }}
         QCheckBox::indicator {{
-            width: 14px; height: 14px;
-            border-radius: 0px;
+            width: 16px; height: 16px;
+            border-radius: 4px;
             border: 1px solid {input_border};
             background: {bg};
         }}
@@ -302,26 +337,39 @@ def get_stylesheet(is_dark_mode: bool) -> str:
         #ClusterChip {{
             background-color: {elevated};
             border: 1px solid {input_border};
-            border-radius: 0px;
-            padding: 4px 10px;
+            border-radius: 999px;
+            padding: 5px 12px;
             color: {text};
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1px;
+            font-size: 11px;
+            font-weight: 600;
         }}
         #ClusterChip:hover {{
             border-color: {primary};
             color: {primary};
+            background-color: rgba(34, 197, 94, 0.10);
         }}
         #DurationPill {{
-            background-color: {elevated};
-            border: 1px solid {primary};
-            border-radius: 0px;
-            padding: 4px 10px;
+            background-color: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            border-radius: 999px;
+            padding: 5px 12px;
             color: {primary};
             font-weight: 700;
-            font-size: 11px;
-            letter-spacing: 1px;
+            font-size: 12px;
+        }}
+        #PulseDot {{
+            background-color: {primary};
+            border-radius: 5px;
+            min-width: 10px; max-width: 10px;
+            min-height: 10px; max-height: 10px;
+        }}
+        #DropHint {{
+            color: {muted};
+            font-size: 14px;
+            border: 2px dashed {input_border};
+            border-radius: 16px;
+            padding: 40px;
+            background-color: {panel};
         }}
     """
 
@@ -338,7 +386,7 @@ class PremiumNotification(QDialog):
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(14)
 
-        accent = "#ff4d6d" if is_error else "#0047FF"
+        accent = "#ff4d6d" if is_error else "#22c55e"
         title_label = QLabel(title)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet(f"color: {accent}; font-size: 13px; font-weight: 700; letter-spacing: 2px;")
@@ -347,7 +395,7 @@ class PremiumNotification(QDialog):
         msg_label = QLabel(message)
         msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         msg_label.setWordWrap(True)
-        msg_label.setStyleSheet("color: #6b6b6b; font-size: 12px;")
+        msg_label.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         layout.addWidget(msg_label)
 
         btn_layout = QHBoxLayout()
@@ -373,7 +421,7 @@ class SettingsDialog(QDialog):
         layout.setSpacing(14)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Black / ASCII", "Light"])
+        self.theme_combo.addItems(["Spoti Dark", "Light"])
         self.theme_combo.setCurrentIndex(0 if is_dark_mode else 1)
         layout.addRow("Theme", self.theme_combo)
 
@@ -724,6 +772,8 @@ class TimelineListWidget(QListWidget):
         self.changed.emit()
 
 
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -731,7 +781,7 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "view.png")
         if os.path.isfile(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        self.resize(1360, 860)
+        self.resize(1380, 880)
         self.setAcceptDrops(True)
 
         self.video_path = None
@@ -740,62 +790,129 @@ class MainWindow(QMainWindow):
         self.eps = 0.35
         self.min_samples = 2
         self.accurate_export = False
-        self.cluster_filter = None  # None = all
+        self.cluster_filter = None
         self.worker = None
         self.export_worker = None
         self.recluster_worker = None
         self.ml_engine = MLEngine()
-        self._undo_stack = []  # list of timeline scene lists
+        self._undo_stack = []
         self._bridge = _UiBridge()
         self._bridge.status.connect(self._set_status)
+        self._pulse_phase = 0
 
         self.init_ui()
         self.apply_styles()
         self._bind_shortcuts()
+        self._start_pulse()
 
-        # Preload CLIP in background
         self.status_label.setText(" Loading AI model…")
         preload_model_async(self._on_model_preload)
 
-    # ── UI ──────────────────────────────────────────────
+    def _start_pulse(self):
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.timeout.connect(self._tick_pulse)
+        self._pulse_timer.start(60)
+
+    def _tick_pulse(self):
+        if not hasattr(self, "pulse_dot"):
+            return
+        busy = (self.worker and self.worker.isRunning()) or (
+            self.export_worker and self.export_worker.isRunning()
+        )
+        self._pulse_phase = (self._pulse_phase + (8 if busy else 3)) % 360
+        t = (math.sin(math.radians(self._pulse_phase)) + 1) / 2
+        s = 8 + int(t * 4) if busy else 10
+        self.pulse_dot.setFixedSize(s, s)
+        color = "#4ade80" if busy else "#22c55e"
+        self.pulse_dot.setStyleSheet(
+            f"#PulseDot {{ background-color: {color}; border-radius: {max(1, s // 2)}px; }}"
+        )
+
     def init_ui(self):
         central = QWidget()
+        central.setObjectName("ContentRoot")
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(18, 18, 18, 10)
-        root.setSpacing(14)
+        outer = QHBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        # Toolbar
+        # Left icon sidebar (SpotiFLAC-style)
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(64)
+        sb = QVBoxLayout(sidebar)
+        sb.setContentsMargins(12, 56, 12, 16)
+        sb.setSpacing(8)
+
+        self.nav_home = QToolButton()
+        self.nav_home.setObjectName("NavBtn")
+        self.nav_home.setText("⌂")
+        self.nav_home.setToolTip("Studio")
+        self.nav_home.setProperty("active", True)
+        self.nav_home.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.nav_settings = QToolButton()
+        self.nav_settings.setObjectName("NavBtn")
+        self.nav_settings.setText("⚙")
+        self.nav_settings.setToolTip("Settings  (S)")
+        self.nav_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.nav_settings.clicked.connect(self.open_settings)
+
+        sb.addWidget(self.nav_home, 0, Qt.AlignmentFlag.AlignHCenter)
+        sb.addWidget(self.nav_settings, 0, Qt.AlignmentFlag.AlignHCenter)
+        sb.addStretch(1)
+
+        brand_mark = QLabel("F")
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setStyleSheet(
+            "color: #22c55e; font-weight: 800; font-size: 16px; "
+            "background: rgba(34,197,94,0.12); border-radius: 10px; "
+            "min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;"
+        )
+        sb.addWidget(brand_mark, 0, Qt.AlignmentFlag.AlignHCenter)
+        outer.addWidget(sidebar)
+
+        main_col = QVBoxLayout()
+        main_col.setContentsMargins(24, 20, 24, 12)
+        main_col.setSpacing(14)
+
+        # Hero
+        hero = QHBoxLayout()
+        hero.setSpacing(12)
+        self.pulse_dot = QFrame()
+        self.pulse_dot.setObjectName("PulseDot")
+        self.pulse_dot.setFixedSize(10, 10)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        hero_title = QLabel("Fracture")
+        hero_title.setObjectName("HeroTitle")
+        self.version_badge = QLabel("v2")
+        self.version_badge.setObjectName("VersionBadge")
+        title_row.addWidget(hero_title)
+        title_row.addWidget(self.version_badge)
+        title_row.addStretch()
+        hero_sub = QLabel(
+            "Local AI scene split · cluster · lossless export — no account required."
+        )
+        hero_sub.setObjectName("HeroSub")
+        title_col.addLayout(title_row)
+        title_col.addWidget(hero_sub)
+        hero.addWidget(self.pulse_dot, 0, Qt.AlignmentFlag.AlignTop)
+        hero.addLayout(title_col, 1)
+        main_col.addLayout(hero)
+
+        # Toolbar card
         toolbar = QFrame()
         toolbar.setObjectName("Toolbar")
+        toolbar.setGraphicsEffect(_shadow(28, 8, 70))
         tb = QHBoxLayout(toolbar)
-        tb.setContentsMargins(16, 12, 16, 12)
-        tb.setSpacing(12)
+        tb.setContentsMargins(14, 12, 14, 12)
+        tb.setSpacing(10)
 
-        brand_dot = QFrame()
-        brand_dot.setObjectName("BrandDot")
-        brand_col = QVBoxLayout()
-        brand_col.setSpacing(0)
-        brand_col.setContentsMargins(0, 0, 0, 0)
-        brand_title = QLabel("FRACTURE")
-        brand_title.setObjectName("BrandTitle")
-        brand_sub = QLabel("// local · offline · lossless")
-        brand_sub.setObjectName("BrandSub")
-        brand_col.addWidget(brand_title)
-        brand_col.addWidget(brand_sub)
-
-        ascii_logo = QLabel(ASCII_LOGO)
-        ascii_logo.setObjectName("AsciiLogo")
-        ascii_logo.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-
-        tb.addWidget(brand_dot)
-        tb.addSpacing(6)
-        tb.addLayout(brand_col)
-        tb.addSpacing(12)
-        tb.addWidget(ascii_logo)
-        tb.addSpacing(18)
-
-        self.import_btn = QPushButton("Import")
+        self.import_btn = QPushButton("  Import video")
         self.import_btn.setObjectName("PrimaryButton")
         self.import_btn.setToolTip("Import video  (I)")
         self.import_btn.clicked.connect(self.import_video)
@@ -806,7 +923,7 @@ class MainWindow(QMainWindow):
         self.add_cluster_btn.clicked.connect(self.add_filtered_cluster)
         self.add_cluster_btn.setEnabled(False)
 
-        self.clear_tl_btn = QPushButton("Clear timeline")
+        self.clear_tl_btn = QPushButton("Clear")
         self.clear_tl_btn.setObjectName("DangerButton")
         self.clear_tl_btn.clicked.connect(self.clear_timeline)
         self.clear_tl_btn.setEnabled(False)
@@ -821,13 +938,13 @@ class MainWindow(QMainWindow):
         self.settings_btn.setToolTip("Settings  (S)")
         self.settings_btn.clicked.connect(self.open_settings)
 
-        self.export_btn = QPushButton("Export")
+        self.export_btn = QPushButton("  Export")
         self.export_btn.setObjectName("PrimaryButton")
         self.export_btn.setToolTip("Export timeline  (E)")
         self.export_btn.clicked.connect(self.export_timeline)
         self.export_btn.setEnabled(False)
 
-        self.duration_pill = QLabel("0.0s")
+        self.duration_pill = QLabel("0.00s")
         self.duration_pill.setObjectName("DurationPill")
         self.duration_pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -839,36 +956,37 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.cancel_btn)
         tb.addWidget(self.settings_btn)
         tb.addWidget(self.export_btn)
-        root.addWidget(toolbar)
+        main_col.addWidget(toolbar)
+        fade_in(toolbar, 320)
 
-        # Cluster filter row
+        # Chips
         self.chip_bar = QHBoxLayout()
         self.chip_bar.setSpacing(8)
         self.chip_host = QWidget()
         self.chip_host.setLayout(self.chip_bar)
         self.chip_scroll = QScrollArea()
         self.chip_scroll.setWidgetResizable(True)
-        self.chip_scroll.setFixedHeight(44)
+        self.chip_scroll.setFixedHeight(48)
         self.chip_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.chip_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.chip_scroll.setWidget(self.chip_host)
-        root.addWidget(self.chip_scroll)
+        main_col.addWidget(self.chip_scroll)
 
-        # Splitter: media pool / timeline
+        # Splitter
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setChildrenCollapsible(False)
 
-        # Media pool
         pool = QFrame()
         pool.setObjectName("PanelFrame")
+        pool.setGraphicsEffect(_shadow(22, 6, 60))
         pool_l = QVBoxLayout(pool)
         pool_l.setContentsMargins(16, 14, 16, 14)
         pool_l.setSpacing(10)
 
         pool_header = QHBoxLayout()
-        pool_title = QLabel("// MEDIA_POOL")
+        pool_title = QLabel("Media Pool")
         pool_title.setObjectName("PanelTitle")
-        self.pool_meta = QLabel("drop video · import · I")
+        self.pool_meta = QLabel("Drop a video or click Import")
         self.pool_meta.setObjectName("PanelMeta")
         pool_header.addWidget(pool_title)
         pool_header.addStretch()
@@ -881,23 +999,29 @@ class MainWindow(QMainWindow):
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent;")
         self.grid_layout = QGridLayout(self.scroll_content)
-        self.grid_layout.setSpacing(12)
+        self.grid_layout.setSpacing(14)
         self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.scroll_area.setWidget(self.scroll_content)
+
+        self.drop_hint = QLabel("Drop .mp4 / .mkv / .mov here\nor press  I  to import")
+        self.drop_hint.setObjectName("DropHint")
+        self.drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pool_l.addWidget(self.drop_hint)
         pool_l.addWidget(self.scroll_area)
+        self.scroll_area.hide()
         self.splitter.addWidget(pool)
 
-        # Timeline
         tl = QFrame()
         tl.setObjectName("PanelFrame")
+        tl.setGraphicsEffect(_shadow(22, 6, 60))
         tl_l = QVBoxLayout(tl)
         tl_l.setContentsMargins(16, 14, 16, 14)
         tl_l.setSpacing(10)
 
         tl_header = QHBoxLayout()
-        tl_title = QLabel("// TIMELINE")
+        tl_title = QLabel("Timeline")
         tl_title.setObjectName("PanelTitle")
-        self.tl_meta = QLabel("click · drag · del · ctrl+z")
+        self.tl_meta = QLabel("Click scenes · drag to reorder · DEL to remove · Ctrl+Z undo")
         self.tl_meta.setObjectName("PanelMeta")
         tl_header.addWidget(tl_title)
         tl_header.addStretch()
@@ -914,19 +1038,24 @@ class MainWindow(QMainWindow):
         self.timeline_list.model().rowsRemoved.connect(lambda *_: self._on_timeline_changed())
         tl_l.addWidget(self.timeline_list)
         self.splitter.addWidget(tl)
-        self.splitter.setSizes([520, 260])
-        root.addWidget(self.splitter)
+        self.splitter.setSizes([540, 260])
+        main_col.addWidget(self.splitter, 1)
 
-        # Status
+        outer.addLayout(main_col, 1)
+
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel(" Ready")
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedWidth(220)
+        self.progress_bar.setFixedWidth(240)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.hide()
         self.status_bar.addWidget(self.status_label, 1)
         self.status_bar.addPermanentWidget(self.progress_bar)
+
+        fade_in(pool, 380, delay=40)
+        fade_in(tl, 420, delay=90)
+
 
     def apply_styles(self):
         self.setStyleSheet(get_stylesheet(self.is_dark_mode))
@@ -1103,7 +1232,20 @@ class MainWindow(QMainWindow):
         if self.cluster_filter is not None:
             scenes = [s for s in scenes if s.get("cluster", -1) == self.cluster_filter]
 
-        cols = max(4, self.scroll_area.viewport().width() // 196)
+        if not scenes:
+            if hasattr(self, "drop_hint"):
+                self.drop_hint.show()
+            if hasattr(self, "scroll_area"):
+                self.scroll_area.hide()
+            self.pool_meta.setText("Drop a video or click Import")
+            return
+
+        if hasattr(self, "drop_hint"):
+            self.drop_hint.hide()
+        if hasattr(self, "scroll_area"):
+            self.scroll_area.show()
+
+        cols = max(4, max(1, self.scroll_area.viewport().width()) // 200)
         for i, scene in enumerate(scenes):
             thumb = SceneThumbnail(
                 scene, self.video_path, self,
@@ -1111,6 +1253,7 @@ class MainWindow(QMainWindow):
                 on_add_cluster=self.add_cluster_to_timeline,
             )
             self.grid_layout.addWidget(thumb, i // cols, i % cols)
+            fade_in(thumb, duration=260, delay=min(i * 18, 420))
         self.pool_meta.setText(
             f"showing {len(scenes)} / {len(self.scenes_data)} scenes"
             if self.cluster_filter is not None
