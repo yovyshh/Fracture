@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import gsap from "gsap";
+import { useRef } from "react";
+import { gsap, useGSAP } from "@/lib/gsap";
 import { cn } from "@/lib/utils";
 
-/** Stagger-fade children on mount (GSAP) — never leaves nodes unclickable. */
+/** Stagger-fade children on mount — never leaves nodes unclickable. */
 export function StaggerIn({
   children,
   className,
@@ -20,11 +20,11 @@ export function StaggerIn({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const items = el.children;
-    const ctx = gsap.context(() => {
+  useGSAP(
+    () => {
+      const el = ref.current;
+      if (!el) return;
+      const items = el.children;
       gsap.fromTo(
         items,
         { opacity: 0, y },
@@ -34,16 +34,16 @@ export function StaggerIn({
           duration: 0.45,
           stagger,
           delay,
-          ease: "power3.out",
+          ease: "fracture.out",
           clearProps: "transform,opacity",
           onComplete: () => {
             gsap.set(items, { clearProps: "all" });
           },
         }
       );
-    }, el);
-    return () => ctx.revert();
-  }, [y, stagger, delay]);
+    },
+    { scope: ref, dependencies: [y, stagger, delay] }
+  );
 
   return (
     <div ref={ref} className={cn(className)}>
@@ -61,10 +61,11 @@ export function PageEnter({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ctx = gsap.context(() => {
+
+  useGSAP(
+    () => {
+      const el = ref.current;
+      if (!el) return;
       gsap.fromTo(
         el,
         { opacity: 0, y: 10 },
@@ -72,16 +73,17 @@ export function PageEnter({
           opacity: 1,
           y: 0,
           duration: 0.45,
-          ease: "power3.out",
+          ease: "fracture.out",
           clearProps: "transform,opacity",
           onComplete: () => {
             gsap.set(el, { clearProps: "all" });
           },
         }
       );
-    }, el);
-    return () => ctx.revert();
-  }, []);
+    },
+    { scope: ref }
+  );
+
   return (
     <div ref={ref} className={className}>
       {children}

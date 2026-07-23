@@ -6,7 +6,7 @@ import { Sidebar } from "./Sidebar";
  * SpotiFLAC-like shell:
  * - icon-only left rail
  * - no top chrome / breadcrumb bar
- * - no Lenis (it was intercepting pointer events)
+ * - native scroll only (smooth-scroll libs can steal clicks)
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (

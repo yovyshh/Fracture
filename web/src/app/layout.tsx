@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
+import { GsapProvider } from "@/components/providers/GsapProvider";
 import "./globals.css";
 
 const jetbrains = JetBrains_Mono({
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${jetbrains.variable} min-h-screen antialiased`}>
-        <AppShell>{children}</AppShell>
+        <GsapProvider>
+          <AppShell>{children}</AppShell>
+        </GsapProvider>
       </body>
     </html>
   );
