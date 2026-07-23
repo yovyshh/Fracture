@@ -122,11 +122,27 @@ body {
 .logo-text {
   font-size: 34px; font-weight: 800; letter-spacing: -0.6px;
 }
+.neon-logo {
+  font-family: var(--mono);
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: transparent;
+  -webkit-text-stroke: 1.6px #0047FF;
+  text-stroke: 1.6px #0047FF;
+  text-shadow:
+    0 0 8px rgba(0, 71, 255, 0.45),
+    0 0 22px rgba(0, 71, 255, 0.2);
+  line-height: 1;
+}
+[data-theme="light"] .neon-logo {
+  -webkit-text-stroke: 1.6px #2563eb;
+  text-shadow: 0 0 6px rgba(37, 99, 235, 0.25);
+}
 .version-pill {
   background: var(--accent); color: var(--accent-text);
   font-size: 11px; font-weight: 700;
   padding: 4px 10px; border-radius: var(--radius-pill);
-  animation: pillIn .5s .1s both var(--ease);
 }
 .hero-sub { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
 
@@ -293,8 +309,22 @@ body {
   animation: cardIn .35s both var(--ease);
   position: relative;
 }
+/* Prefer GSAP for enter; keep subtle CSS fallbacks when GSAP disabled */
+.scene-card,
+.chip,
+.tl-item {
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .scene-card:hover {
-  transform: translateY(-3px);
+  /* GSAP handles lift; keep border/shadow here */
   border-color: var(--accent);
   box-shadow: var(--shadow);
   background: var(--card-hover);

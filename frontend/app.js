@@ -1,7 +1,8 @@
-/* Fracture frontend — SpotiFLAC-inspired SPA */
+/* Fracture frontend — SpotiFLAC-inspired SPA + GSAP motion */
 (() => {
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+  const M = window.FractureMotion || { ok: false };
 
   const state = {
     session: null,
@@ -16,7 +17,6 @@
     "#f59e0b", "#2dd4bf", "#60a5fa", "#c084fc", "#4ade80",
   ];
 
-  // ── API ─────────────────────────────────────────────
   async function api(path, opts = {}) {
     const res = await fetch(path, {
       headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
@@ -34,27 +34,45 @@
     return res.json();
   }
 
-  // ── Toasts / Modal ──────────────────────────────────
   function toast(title, message = "", type = "info") {
     const root = $("#toasts");
     const el = document.createElement("div");
     el.className = `toast ${type}`;
     el.innerHTML = `<div class="t">${esc(title)}</div>${message ? `<div class="m">${esc(message)}</div>` : ""}`;
     root.appendChild(el);
+    if (M.toastIn) M.toastIn(el);
     setTimeout(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translateY(8px)";
-      el.style.transition = "all .25s ease";
-      setTimeout(() => el.remove(), 250);
+      if (M.toastOut) M.toastOut(el, () => el.remove());
+      else {
+        el.style.opacity = "0";
+        setTimeout(() => el.remove(), 220);
+      }
     }, 3800);
   }
 
   function modal(title, body) {
     $("#modal-title").textContent = title;
     $("#modal-body").textContent = body;
-    $("#modal").classList.remove("hidden");
+    const bd = $("#modal");
+    bd.classList.remove("hidden");
+    if (M.modalIn) M.modalIn(bd, bd.querySelector(".modal"));
   }
-  $("#modal-ok").onclick = () => $("#modal").classList.add("hidden");
+  $("#modal-ok").onclick = () => {
+    const bd = $("#modal");
+    if (M.ok && window.gsap) {
+      window.gsap.to(bd, {
+        autoAlpha: 0,
+        duration: 0.18,
+        onComplete: () => {
+          bd.classList.add("hidden");
+          bd.style.opacity = "";
+          bd.style.visibility = "";
+        },
+      });
+    } else {
+      bd.classList.add("hidden");
+    }
+  };
 
   function esc(s) {
     return String(s ?? "")
@@ -64,7 +82,6 @@
       .replace(/"/g, "&quot;");
   }
 
-  // ── Status / progress ───────────────────────────────
   function setStatus(text, busy = false) {
     $("#status-text").textContent = text;
     $("#pulse").classList.toggle("busy", busy);
@@ -78,15 +95,19 @@
     }
     wrap.classList.remove("hidden");
     const p = Math.max(0, Math.min(100, pct | 0));
-    $("#progress-fill").style.width = p + "%";
+    if (M.progressTo) M.progressTo($("#progress-fill"), p);
+    else $("#progress-fill").style.width = p + "%";
     $("#progress-pct").textContent = p + "%";
   }
 
-  // ── Pages / tabs ────────────────────────────────────
   function showPage(name) {
     $$(".page").forEach((p) => p.classList.remove("active"));
     $$(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === name));
-    $(`#page-${name}`)?.classList.add("active");
+    const page = $(`#page-${name}`);
+    page?.classList.add("active");
+    if (M.pageIn) M.pageIn(page);
+    const nav = $(`.nav-btn[data-page="${name}"]`);
+    if (M.flash) M.flash(nav);
   }
   $$(".nav-btn").forEach((b) => b.addEventListener("click", () => showPage(b.dataset.page)));
   $("#crumb-home")?.addEventListener("click", () => showPage("home"));
@@ -95,24 +116,22 @@
     tab.addEventListener("click", () => {
       $$(".tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
-      $$(".settings-panel").forEach((p) =>
-        p.classList.toggle("active", p.dataset.panel === tab.dataset.tab)
-      );
+      $$(".settings-panel").forEach((p) => {
+        const on = p.dataset.panel === tab.dataset.tab;
+        p.classList.toggle("active", on);
+        if (on && M.tabPanel) M.tabPanel(p);
+      });
+      if (M.pop) M.pop(tab);
     });
   });
 
-  // ── Theme ───────────────────────────────────────────
   function applyTheme() {
-    const theme = $("#set-theme").value;
-    const accent = $("#set-accent").value;
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.accent = accent;
+    document.documentElement.dataset.theme = $("#set-theme").value;
+    document.documentElement.dataset.accent = $("#set-accent").value;
   }
 
-  // ── Render ──────────────────────────────────────────
   function renderSession(s) {
     state.session = s;
-    // settings fields
     $("#set-eps").value = s.eps ?? 0.35;
     $("#eps-val").textContent = Number(s.eps ?? 0.35).toFixed(2);
     $("#set-min").value = s.min_samples ?? 2;
@@ -122,10 +141,8 @@
     if (s.accent) $("#set-accent").value = s.accent;
     applyTheme();
 
-    // path
     if (s.video_path) $("#path-input").value = s.video_path;
 
-    // status cards
     $("#stat-ffmpeg").textContent = s.ffmpeg ? "OK" : "Missing";
     $("#stat-ffmpeg").style.color = s.ffmpeg ? "var(--accent)" : "var(--danger)";
     $("#stat-model").textContent = s.model_ready ? "Ready" : "Loading…";
@@ -148,10 +165,9 @@
       return;
     }
     $("#recent-block").classList.remove("hidden");
-    items.forEach((it, i) => {
+    items.forEach((it) => {
       const b = document.createElement("button");
       b.className = "chip";
-      b.style.animationDelay = `${i * 30}ms`;
       b.textContent = it.name || it.path;
       b.title = it.path;
       b.onclick = () => {
@@ -160,6 +176,8 @@
       };
       root.appendChild(b);
     });
+    if (M.staggerIn) M.staggerIn(root.querySelectorAll(".chip"), { stagger: 0.04 });
+    if (M.bindHoverLift) M.bindHoverLift(root);
   }
 
   function renderScenes(scenes) {
@@ -167,7 +185,6 @@
     $("#cluster-block").classList.toggle("hidden", !has);
     $("#pool-block").classList.toggle("hidden", !has);
 
-    // chips
     const chips = $("#cluster-chips");
     chips.innerHTML = "";
     const all = document.createElement("button");
@@ -185,8 +202,10 @@
       const b = document.createElement("button");
       b.className = "chip" + (state.clusterFilter === c ? " active" : "");
       const color = c < 0 ? "#a1a1aa" : CLUSTER_COLORS[c % CLUSTER_COLORS.length];
-      b.style.borderColor = state.clusterFilter === c ? color : "";
-      b.style.color = state.clusterFilter === c ? color : "";
+      if (state.clusterFilter === c) {
+        b.style.borderColor = color;
+        b.style.color = color;
+      }
       b.textContent = (c < 0 ? "noise" : `C${c}`) + ` · ${count}`;
       b.onclick = (e) => {
         if (e.shiftKey) {
@@ -198,22 +217,21 @@
       };
       chips.appendChild(b);
     });
+    if (M.staggerIn) M.staggerIn(chips.querySelectorAll(".chip"), { stagger: 0.03, duration: 0.28 });
+    if (M.bindHoverLift) M.bindHoverLift(chips);
 
     const filtered =
       state.clusterFilter == null
         ? scenes
         : scenes.filter((s) => s.cluster === state.clusterFilter);
 
-    $("#pool-meta").textContent = has
-      ? `${filtered.length} / ${scenes.length} scenes`
-      : "";
+    $("#pool-meta").textContent = has ? `${filtered.length} / ${scenes.length} scenes` : "";
 
     const grid = $("#scene-grid");
     grid.innerHTML = "";
-    filtered.forEach((s, i) => {
+    filtered.forEach((s) => {
       const card = document.createElement("article");
       card.className = "scene-card";
-      card.style.animationDelay = `${Math.min(i * 20, 400)}ms`;
       const color = s.cluster < 0 ? "#71717a" : CLUSTER_COLORS[s.cluster % CLUSTER_COLORS.length];
       card.innerHTML = `
         <div class="accent-bar" style="background:${color}"></div>
@@ -230,18 +248,21 @@
       };
       grid.appendChild(card);
     });
+    if (M.staggerIn) M.staggerIn(grid.querySelectorAll(".scene-card"), { stagger: 0.028, duration: 0.34 });
+    if (M.bindHoverLift) M.bindHoverLift(grid);
   }
 
   function renderTimeline() {
     const root = $("#timeline");
     const empty = $("#timeline-empty");
-    // remove items but keep empty node
     [...root.querySelectorAll(".tl-item")].forEach((n) => n.remove());
 
     const total = state.timeline.reduce((a, s) => a + (s.duration || 0), 0);
     const mins = Math.floor(total / 60);
     const secs = total % 60;
-    $("#duration-pill").textContent = mins ? `${mins}:${secs.toFixed(2).padStart(5, "0")}` : `${secs.toFixed(2)}s`;
+    const pill = $("#duration-pill");
+    pill.textContent = mins ? `${mins}:${secs.toFixed(2).padStart(5, "0")}` : `${secs.toFixed(2)}s`;
+    if (M.pop) M.pop(pill);
     $("#btn-export").disabled = state.timeline.length === 0;
     $("#stat-timeline").textContent = String(state.timeline.length);
 
@@ -256,7 +277,6 @@
       row.className = "tl-item";
       row.draggable = true;
       row.dataset.idx = String(idx);
-      row.style.animationDelay = `${Math.min(idx * 25, 300)}ms`;
       row.innerHTML = `
         <img src="${esc(s.frame_url)}" alt="" />
         <div class="info">
@@ -266,9 +286,22 @@
         <button class="tl-del" type="button">DEL</button>`;
       row.querySelector(".tl-del").onclick = (e) => {
         e.stopPropagation();
-        state.timeline.splice(idx, 1);
-        syncTimeline();
-        renderTimeline();
+        const remove = () => {
+          // re-find by id in case indexes shifted during anim
+          const i = state.timeline.findIndex((x) => x.id === s.id && x.start_time === s.start_time);
+          if (i >= 0) state.timeline.splice(i, 1);
+          syncTimeline();
+          renderTimeline();
+        };
+        if (M.ok && window.gsap) {
+          window.gsap.to(row, {
+            autoAlpha: 0,
+            x: 24,
+            duration: 0.25,
+            ease: "power2.in",
+            onComplete: remove,
+          });
+        } else remove();
       };
       row.addEventListener("dragstart", (e) => {
         row.classList.add("dragging");
@@ -288,6 +321,7 @@
       });
       root.appendChild(row);
     });
+    if (M.staggerIn) M.staggerIn(root.querySelectorAll(".tl-item"), { stagger: 0.04, duration: 0.3 });
   }
 
   function addToTimeline(scene) {
@@ -299,6 +333,7 @@
     syncTimeline();
     renderTimeline();
     toast("Added", `${scene.duration.toFixed(2)}s clip`, "success");
+    if (M.flash) M.flash($("#timeline"));
   }
 
   function addCluster(clusterId) {
@@ -316,6 +351,7 @@
     syncTimeline();
     renderTimeline();
     toast("Cluster added", `${n} scenes`, "success");
+    if (M.flash) M.flash($("#timeline"));
   }
 
   async function syncTimeline() {
@@ -329,22 +365,19 @@
     }
   }
 
-  // ── Jobs ────────────────────────────────────────────
   async function trackJob(jobId) {
     state.activeJobId = jobId;
     $("#btn-cancel").classList.remove("hidden");
+    if (M.pop) M.pop($("#btn-cancel"));
     setProgress(0, true);
     setStatus("Working…", true);
 
-    // poll as backup to websocket
     const tick = async () => {
       if (state.activeJobId !== jobId) return;
       try {
         const job = await api(`/api/jobs/${jobId}`);
         onJob(job);
-        if (job.status === "running") {
-          setTimeout(tick, 400);
-        }
+        if (job.status === "running") setTimeout(tick, 400);
       } catch {
         setTimeout(tick, 800);
       }
@@ -363,11 +396,8 @@
       setTimeout(() => setProgress(0, false), 800);
       $("#btn-cancel").classList.add("hidden");
       state.activeJobId = null;
-      if (job.kind === "export") {
-        toast("Export complete", job.result?.output_path || "", "success");
-      } else {
-        toast("Analysis complete", job.message || "", "success");
-      }
+      if (job.kind === "export") toast("Export complete", job.result?.output_path || "", "success");
+      else toast("Analysis complete", job.message || "", "success");
       refreshSession();
     } else if (job.status === "error") {
       setProgress(0, false);
@@ -383,11 +413,9 @@
     }
   }
 
-  // ── Actions ─────────────────────────────────────────
   async function startImport(path) {
     path = (path || $("#path-input").value || "").trim().replace(/^["']|["']$/g, "");
     if (!path) {
-      // try native dialog via pywebview
       if (window.pywebview?.api?.open_file) {
         path = await window.pywebview.api.open_file();
         if (!path) return;
@@ -399,6 +427,7 @@
     }
     try {
       state.timeline = [];
+      if (M.flash) M.flash($("#btn-import"));
       const { job_id } = await api("/api/import", {
         method: "POST",
         body: JSON.stringify({ path }),
@@ -412,13 +441,11 @@
   async function startExport() {
     if (!state.timeline.length) return;
     let out = null;
-    if (window.pywebview?.api?.save_file) {
-      out = await window.pywebview.api.save_file();
-    } else {
-      out = prompt("Export path (.mp4)", "C:\\Users\\Windows 11 Pro\\Videos\\fracture_out.mp4");
-    }
+    if (window.pywebview?.api?.save_file) out = await window.pywebview.api.save_file();
+    else out = prompt("Export path (.mp4)", "C:\\Users\\Windows 11 Pro\\Videos\\fracture_out.mp4");
     if (!out) return;
     try {
+      if (M.flash) M.flash($("#btn-export"));
       const { job_id } = await api("/api/export", {
         method: "POST",
         body: JSON.stringify({ output_path: out, scenes: state.timeline }),
@@ -443,6 +470,7 @@
         }),
       });
       toast("Settings saved", "", "success");
+      if (M.flash) M.flash($("#btn-save-settings"));
     } catch (e) {
       modal("Settings error", e.message);
     }
@@ -467,7 +495,6 @@
   async function refreshSession() {
     try {
       const s = await api("/api/session");
-      // keep local timeline if user has been editing
       const keepTl = state.timeline.length > 0;
       const tl = keepTl ? state.timeline : s.timeline || [];
       renderSession(s);
@@ -480,7 +507,6 @@
     }
   }
 
-  // ── WS ──────────────────────────────────────────────
   function connectWs() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -490,9 +516,8 @@
         const msg = JSON.parse(ev.data);
         if (msg.type === "hello" || msg.type === "session") {
           if (msg.session) renderSession(msg.session);
-        } else if (msg.type === "job") {
-          onJob(msg.job);
-        } else if (msg.type === "model") {
+        } else if (msg.type === "job") onJob(msg.job);
+        else if (msg.type === "model") {
           $("#stat-model").textContent = msg.ready ? "Ready" : msg.error || "Loading…";
           if (msg.ready) setStatus("AI model ready", false);
         }
@@ -504,7 +529,6 @@
     }, 15000);
   }
 
-  // ── Wire ────────────────────────────────────────────
   function wire() {
     $("#btn-import").onclick = () => startImport();
     $("#btn-browse").onclick = async () => {
@@ -552,23 +576,22 @@
       $("#eps-val").textContent = "0.35";
       $("#min-val").textContent = "2";
       applyTheme();
+      if (M.flash) M.flash($("#page-settings"));
     };
     $("#set-eps").oninput = (e) => ($("#eps-val").textContent = Number(e.target.value).toFixed(2));
     $("#set-min").oninput = (e) => ($("#min-val").textContent = e.target.value);
     $("#set-theme").onchange = applyTheme;
     $("#set-accent").onchange = applyTheme;
 
-    // drag-drop files on window
     window.addEventListener("dragover", (e) => e.preventDefault());
     window.addEventListener("drop", (e) => {
       e.preventDefault();
-      // pywebview may expose path via files; otherwise user pastes path
       const f = e.dataTransfer?.files?.[0];
       if (f && f.path) {
         $("#path-input").value = f.path;
         startImport(f.path);
       } else if (f?.name) {
-        toast("Drop path", "Browsers hide full paths — use Browse or paste the path", "info");
+        toast("Drop path", "Use Browse or paste the full path", "info");
       }
     });
 
@@ -579,14 +602,14 @@
       if (e.key === "s" || e.key === "S") showPage("settings");
       if (e.key === "Escape" && state.activeJobId) $("#btn-cancel").click();
     });
+
+    if (M.bindHoverLift) M.bindHoverLift(document);
   }
 
-  // pywebview ready
-  window.addEventListener("pywebviewready", () => {
-    setStatus("Desktop shell ready", false);
-  });
+  window.addEventListener("pywebviewready", () => setStatus("Desktop shell ready", false));
 
   wire();
+  if (M.boot) M.boot();
   connectWs();
   refreshSession();
   api("/api/health")
