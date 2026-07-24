@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go
+vendor/
+*.test
+*.out
+go.work
+go.work.sum
+
+# Build
+build/bin/
+build/windows/*.exe
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Wails
+frontend/wailsjs/go/main/App.js
+frontend/wailsjs/go/main/App.d.ts
+frontend/wailsjs/runtime/
