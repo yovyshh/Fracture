@@ -54,7 +54,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     ] as const;
 
     return (
-        <div className="fixed left-0 top-0 h-full w-[64px] bg-background border-r border-border flex flex-col items-center py-14 z-30">
+        <div className="shrink-0 w-[64px] h-full bg-background border-r border-border flex flex-col items-center py-14 z-30">
             <div className="flex flex-col gap-4 flex-1 mt-4">
                 {topNav.map((item) => {
                     const IconComp = item.component as any;

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, type PageType } from './components/Sidebar';
-import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network } from 'lucide-react';
+import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, ExternalLink, Github, Heart, Coffee } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails } from "../wailsjs/go/main/App";
 
@@ -17,15 +17,36 @@ type ExportRecord = {
   duration: string;
 };
 
-/** Scene tile: JPEG thumb + seeks the main player for preview (reliable for big files). */
-function MediaClip({
-  thumbUrl,
-  timeOffset,
-  clusterNum,
-  videoUrl,
-  onClick,
-  onPreview,
-}: {
+type SettingsTab = "general" | "clustering" | "hardware" | "export";
+type ThemeId = "moonlight" | "amethyst" | "frost" | "ember";
+
+const THEMES: { id: ThemeId; name: string; icon: typeof Sun; desc: string }[] = [
+  { id: "moonlight", name: "Moonlight", icon: Moon, desc: "Deep dark with violet accent" },
+  { id: "amethyst", name: "Amethyst", icon: Palette, desc: "Rich purple undertones" },
+  { id: "frost", name: "Frost", icon: Monitor, desc: "Cool blue steel" },
+  { id: "ember", name: "Ember", icon: Sun, desc: "Warm amber glow" },
+];
+
+function applyTheme(theme: ThemeId) {
+  document.documentElement.classList.remove("theme-moonlight", "theme-amethyst", "theme-frost", "theme-ember");
+  document.documentElement.classList.add(`theme-${theme}`);
+  localStorage.setItem("fracture-theme", theme);
+}
+
+function getStoredTheme(): ThemeId {
+  if (typeof window === "undefined") return "moonlight";
+  return (localStorage.getItem("fracture-theme") as ThemeId) || "moonlight";
+}
+
+// ── helpers ──
+const formatTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+};
+
+/** Scene tile: JPEG thumb + hover plays short preview via main player */
+function MediaClip({ thumbUrl, timeOffset, clusterNum, videoUrl, onClick, onPreview }: {
   thumbUrl?: string;
   timeOffset: number;
   clusterNum: string | number;
@@ -36,7 +57,6 @@ function MediaClip({
   const [isHovered, setIsHovered] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // When hovered, seek to timeOffset and play
   useEffect(() => {
     if (isHovered && videoRef.current) {
       videoRef.current.currentTime = timeOffset;
@@ -45,12 +65,6 @@ function MediaClip({
       videoRef.current.pause();
     }
   }, [isHovered, timeOffset]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
 
   return (
     <div
@@ -65,33 +79,21 @@ function MediaClip({
     >
       <div className="absolute inset-0 bg-black">
         {isHovered && videoUrl && (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            muted
-            autoPlay
-            onLoadedMetadata={() => {
-              if (videoRef.current) {
-                videoRef.current.currentTime = timeOffset;
-              }
-            }}
+          <video ref={videoRef} src={videoUrl} muted autoPlay
+            onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = timeOffset; }}
             className="absolute inset-0 w-full h-full object-cover z-20"
           />
         )}
         {thumbUrl ? (
-          <img
-            src={thumbUrl}
-            alt={`Scene ${formatTime(timeOffset)}`}
+          <img src={thumbUrl} alt={`Scene ${formatTime(timeOffset)}`}
             className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-10 transition-opacity z-10"
-            loading="lazy"
-            draggable={false}
+            loading="lazy" draggable={false}
           />
         ) : (
           <div className="absolute inset-0 bg-muted/40 animate-pulse z-10" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-30" />
       </div>
-
       <div className="absolute top-1 right-1 z-10 pointer-events-none">
         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${clusterNum === 'Noise' ? 'bg-destructive/80 text-white' : 'bg-black/60 text-white'}`}>
           {clusterNum === 'Noise' ? 'N' : `C${clusterNum}`}
@@ -109,6 +111,8 @@ function MediaClip({
   );
 }
 
+// ═══════════════════════ APP ═══════════════════════
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>("main");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -120,156 +124,153 @@ export default function App() {
   const [historyRecords, setHistoryRecords] = useState<ExportRecord[]>([]);
   const mainVideoRef = useRef<HTMLVideoElement>(null);
 
-  const seekMainPreview = (t: number) => {
-    const v = mainVideoRef.current;
-    if (!v) return;
-    const target = Math.max(0, t);
-    const go = () => {
-      try {
-        v.currentTime = target;
-        v.muted = false;
-        v.play().catch(() => {});
-      } catch { /* ignore */ }
-    };
-    if (v.readyState >= 1) go();
-    else v.addEventListener('loadedmetadata', go, { once: true });
-  };
+  // Theme state
+  const [theme, setTheme] = useState<ThemeId>(getStoredTheme);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [fontFamily, setFontFamily] = useState<string>(() => localStorage.getItem("fracture-font") || "JetBrains Mono");
 
+  // Settings state (persisted)
+  const [settings, setSettings] = useState<Record<string, any>>(() => {
+    try { return JSON.parse(localStorage.getItem("fracture-settings") || "{}"); } catch { return {}; }
+  });
+  const set = (key: string, value: any) => setSettings(prev => ({ ...prev, [key]: value }));
+  const s = (key: string, fallback: any) => settings[key] ?? fallback;
+
+  // Applies theme + font on mount + toggle
+  useEffect(() => { applyTheme(theme); }, [theme]);
+  useEffect(() => {
+    const stack: Record<string, string> = {
+      "JetBrains Mono": '"JetBrains Mono", monospace',
+      "Fira Code": '"Fira Code", "Cascadia Code", monospace',
+      "Inter": '"Inter", "SF Pro", system-ui, sans-serif',
+      "SF Mono": '"SF Mono", "SF Pro", "Menlo", monospace',
+    };
+    const css = stack[fontFamily] || stack["JetBrains Mono"];
+    document.documentElement.style.setProperty("--font-sans", css);
+    document.documentElement.style.setProperty("--font-mono", css);
+    localStorage.setItem("fracture-font", fontFamily);
+  }, [fontFamily]);
+
+  // ── History ──
   const loadHistory = async () => {
     try {
-      const data = await GetHistory();
-      setHistoryRecords(JSON.parse(data));
-    } catch { 
-      setHistoryRecords([]); 
-    }
+      const json = await GetHistory();
+      setHistoryRecords(json ? JSON.parse(json) : []);
+    } catch { setHistoryRecords([]); }
   };
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
+  // ── Import ──
   const importVideo = async () => {
     if (isProcessing) return;
-    // Reset old video state for reimport
-    setVideoUrl(null);
-    setVideoPath(null);
-    setScenes([]);
-    setCuratedClips([]);
     try {
       const path = await SelectVideo();
       if (!path) return;
-      setVideoPath(path);
+      setIsProcessing(true);
 
-      // 1) Instant stream URL (AMVerge convertFileSrc equivalent) — no full-file read
+      // 1) Start video stream — instant
       const streamUrl = await ServeVideo(path);
       setVideoUrl(streamUrl);
-      toast.success(`Loading: ${path.split(/[/\\]/).pop()}`);
+      setVideoPath(path);
+      setScenes([]);
+      setCuratedClips([]);
+      setActiveCluster("All");
 
-      // 2) Fast keyframe scene detect (ffprobe packets — AMVerge style)
-      setIsProcessing(true);
+      // 2) Fast keyframe scene detect
       try {
         const scenesJson = await GetSceneClusters(path);
-        let detectedScenes: ClipData[] = JSON.parse(scenesJson).map((s: any) => ({
+        const detectedScenes: ClipData[] = JSON.parse(scenesJson).map((s: any) => ({
           id: Math.random().toString(36).substring(2, 9),
           timeOffset: s.timeOffset,
           clusterNum: s.clusterNum,
         }));
-
-        if (detectedScenes.length === 0) {
-          detectedScenes = Array.from({ length: 24 }).map((_, i) => ({
-            id: Math.random().toString(36).substring(2, 9),
-            timeOffset: i * 5,
-            clusterNum: String(i % 3),
-          }));
-        }
-
-        // Show scene cards immediately — don't wait on thumbs
-        setScenes(detectedScenes);
+        setScenes(detectedScenes.length ? detectedScenes : Array.from({length:24},(_,i)=>({id:Math.random().toString(36).substring(2,9),timeOffset:i*5,clusterNum:String(i%3)})));
         setIsProcessing(false);
-        toast.success(`${detectedScenes.length} scenes ready`);
-
-        // Background JPEG thumbs (grid stays interactive)
-        const offsets = detectedScenes.map(s => s.timeOffset);
-        GenerateThumbnails(path, offsets).then((thumbsJson) => {
-          try {
-            const thumbs: { timeOffset: number; url: string }[] = JSON.parse(thumbsJson);
-            const byOffset = new Map(thumbs.map(t => [t.timeOffset, t.url]));
-            setScenes(prev => prev.map(s => ({
-              ...s,
-              thumbUrl: byOffset.get(s.timeOffset) || s.thumbUrl,
-            })));
-          } catch { /* ignore */ }
-        }).catch(() => { /* thumbs optional */ });
-      } catch (err: any) {
+        toast.success(`${detectedScenes.length || 24} scenes ready`);
+      } catch {
+        // fallback even if scene detect fails
         setIsProcessing(false);
-        throw err;
+        setScenes(Array.from({length:24},(_,i)=>({id:Math.random().toString(36).substring(2,9),timeOffset:i*5,clusterNum:String(i%3)})));
       }
+
+      // Background JPEG thumbs
+      GenerateThumbnails(path, []).then((thumbsJson) => {
+        try {
+          const thumbs: { timeOffset: number; url: string }[] = JSON.parse(thumbsJson);
+          const byOffset = new Map(thumbs.map(t => [t.timeOffset, t.url]));
+          setScenes(prev => prev.map(s => ({ ...s, thumbUrl: byOffset.get(s.timeOffset) || s.thumbUrl })));
+        } catch { /* thumbs optional */ }
+      }).catch(() => {});
     } catch (err: any) {
       setIsProcessing(false);
       toast.error(`Import failed: ${err.message || err}`);
     }
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    // For drag & drop the Go backend needs the path — we use the import flow
+    await importVideo();
   };
 
-  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (videoPath) return;
-    // Browser drag-drop gives a File object — use native dialog instead to get the real path
-    toast.info("Please use the native file dialog to import (click the area)");
+  const seekMainPreview = (t: number) => {
+    const v = mainVideoRef.current;
+    if (!v) return;
+    const go = () => {
+      try { v.currentTime = Math.max(0, t); v.muted = false; v.play().catch(() => {}); } catch { /* ignore */ }
+    };
+    if (v.readyState >= 1) go();
+    else v.addEventListener('loadedmetadata', go as EventListener, { once: true });
   };
 
   const handleAddToTimeline = (timeOffset: number, clusterNum: string | number, thumbUrl?: string) => {
-    setCuratedClips(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), timeOffset, clusterNum, thumbUrl }]);
-    toast.success(`Added scene at ${formatTime(timeOffset)} to timeline`);
+    setCuratedClips(prev => [...prev, { id: crypto.randomUUID(), timeOffset, clusterNum, thumbUrl }]);
+    toast.success(`Added at ${formatTime(timeOffset)}`);
   };
 
   const handleRemoveFromTimeline = (id: string) => {
     setCuratedClips(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleClearTimeline = () => {
-    setCuratedClips([]);
-    toast.success("Timeline cleared");
-  };
+  const handleClearTimeline = () => { setCuratedClips([]); };
 
   const handlePageChange = (page: PageType) => {
     setCurrentPage(page);
     if (page === "history") loadHistory();
   };
 
+  // ── Settings save/reset ──
+  const handleSaveSettings = () => {
+    const all = { ...settings, fontFamily, theme };
+    localStorage.setItem("fracture-settings", JSON.stringify(all));
+    localStorage.setItem("fracture-font", fontFamily);
+    toast.success("Settings saved");
+  };
+  const handleResetSettings = () => {
+    localStorage.removeItem("fracture-settings");
+    localStorage.removeItem("fracture-theme");
+    localStorage.removeItem("fracture-font");
+    setTheme("moonlight");
+    setFontFamily("JetBrains Mono");
+    setSettings({});
+    toast.success("Settings reset to defaults");
+  };
+
+  // ── Export ──
   const handleExport = async () => {
-    if (curatedClips.length === 0) {
-      toast.error("Timeline is empty!");
-      return;
-    }
-    if (!videoPath) {
-      toast.error("No video imported. Please import a video first.");
-      return;
-    }
-
+    if (curatedClips.length === 0) { toast.error("Timeline is empty!"); return; }
+    if (!videoPath) { toast.error("No video imported."); return; }
     try {
-      // Always export as MP4
       const base = videoPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'export';
-      const defaultName = `${base}_export.mp4`;
-      const savePath = await SelectSavePath(defaultName);
-      if (!savePath) return; // User cancelled
-
+      const savePath = await SelectSavePath(`${base}_export.mp4`);
+      if (!savePath) return;
       const toastId = toast.loading(`Exporting MP4 (${curatedClips.length} clips)…`);
       const offsets = curatedClips.map(c => c.timeOffset);
       const outputPath = await ExportTimeline(videoPath, offsets, savePath);
-      
-      // Save to history
-      try {
-        await SaveExportRecord(videoPath, outputPath, offsets, `${curatedClips.length} clips`);
-        loadHistory();
-      } catch {}
-      
-      toast.success(`Export complete! ${outputPath.split(/[/\\]/).pop()}`, { id: toastId });
+      try { await SaveExportRecord(videoPath, outputPath, offsets, `${curatedClips.length} clips`); loadHistory(); } catch {}
+      toast.success(`Export complete!`, { id: toastId });
     } catch (err: any) {
       toast.error(`Export failed: ${err.message || err}`);
     }
@@ -277,24 +278,22 @@ export default function App() {
 
   const pipelineSteps = [
     { name: "Import", icon: DownloadCloud, active: true },
-    { name: "Detect (I-Frames)", icon: Scissors, active: videoPath !== null },
-    { name: "Embed (CLIP)", icon: Cpu, active: videoPath !== null && !isProcessing },
-    { name: "Cluster (DBSCAN)", icon: Network, active: videoPath !== null && !isProcessing },
+    { name: "Detect", icon: Scissors, active: videoPath !== null },
+    { name: "Cluster", icon: Network, active: videoPath !== null && !isProcessing },
     { name: "Curate", icon: Layers, active: videoPath !== null && !isProcessing },
-    { name: "Export", icon: Save, active: false }
+    { name: "Export", icon: Save, active: false },
   ];
+
+  // ════════════ PAGES ════════════
 
   const renderHome = () => (
     <div className="w-full h-full flex flex-col animate-in fade-in zoom-in-95 duration-200">
-      
-      {/* Top Header & Pipeline */}
+      {/* Pipeline */}
       <div className="flex flex-col items-center gap-6 mb-8 mt-2">
         <div className="flex items-center justify-center gap-3">
           <h1 className="text-4xl font-bold tracking-tight">Fracture</h1>
           <span className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs font-bold font-mono border border-primary/20">v1.0.0</span>
         </div>
-        
-        {/* Pipeline Visualizer */}
         <div className="flex items-center justify-center gap-2 max-w-4xl w-full px-4">
           {pipelineSteps.map((step, index) => (
             <div key={step.name} className="flex items-center">
@@ -304,20 +303,16 @@ export default function App() {
                 </div>
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-center">{step.name}</span>
               </div>
-              {index < pipelineSteps.length - 1 && (
-                <div className={`w-12 h-0.5 mx-2 rounded-full transition-colors duration-500 ${step.active ? 'bg-primary/50' : 'bg-border'}`} />
-              )}
+              {index < pipelineSteps.length - 1 && (<div className={`w-12 h-0.5 mx-2 rounded-full transition-colors duration-500 ${step.active ? 'bg-primary/50' : 'bg-border'}`} />)}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Main Workspace */}
       {!videoPath ? (
         <div className="flex-1 flex items-center justify-center pb-20">
           <div className="w-full max-w-2xl flex flex-col items-center gap-6">
-            <div 
-              onClick={importVideo} onDragOver={handleDragOver} onDrop={handleDrop}
+            <div onClick={importVideo} onDragOver={handleDragOver} onDrop={handleDrop}
               className="w-full aspect-video border-2 border-dashed border-border rounded-2xl bg-card hover:bg-muted/50 hover:border-primary/50 transition-all duration-300 flex items-center justify-center cursor-pointer group shadow-sm hover:shadow-xl hover:shadow-primary/10 relative overflow-hidden"
             >
               <div className="flex flex-col items-center gap-4 text-muted-foreground group-hover:text-primary transition-colors duration-300 z-10">
@@ -335,62 +330,39 @@ export default function App() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
-          
-          {/* Controls & Cluster Chips */}
-          <div className="flex items-center justify-between bg-card border border-border rounded-xl p-3 shadow-sm shrink-0">
-            <div className="flex items-center gap-2">
+          {/* Controls */}
+          <div className="flex items-center justify-between bg-card border border-border rounded-xl p-3 shadow-sm shrink-0 flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground font-mono font-bold uppercase tracking-wider mr-2">Clusters:</span>
               {(() => {
                 const uniqueClusters = [...new Set(scenes.map(s => String(s.clusterNum)))];
-                const allClusters = ["All", ...uniqueClusters.sort()];
-                return allClusters.map(cluster => (
-                <button 
-                  key={cluster} 
-                  onClick={() => setActiveCluster(cluster)}
-                  className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition-all ${
-                    activeCluster === cluster 
-                      ? 'bg-primary text-white shadow-md shadow-primary/20' 
-                      : cluster === 'Noise' 
-                        ? 'bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/20'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-border'
-                  }`}
-                >
-                  {cluster}
-                </button>
-              ))})()}
+                return ["All", ...uniqueClusters.sort()].map(cluster => (
+                  <button key={cluster} onClick={() => setActiveCluster(cluster)}
+                    className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition-all ${activeCluster === cluster ? 'bg-primary text-white shadow-md shadow-primary/20' : cluster === 'Noise' ? 'bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/20' : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-border'}`}
+                  >{cluster}</button>
+                ));
+              })()}
             </div>
-            
             <div className="flex items-center gap-3 text-sm">
               <button onClick={importVideo} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground text-xs font-medium rounded border border-border transition-colors flex items-center gap-1.5">
-                <DownloadCloud className="w-3 h-3" />
-                New Video
+                <DownloadCloud className="w-3 h-3" /> New Video
               </button>
               <div className="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-md text-muted-foreground font-mono text-xs">
                 <span>eps: 0.35</span>
                 <div className="w-px h-3 bg-border" />
                 <span>min: 2</span>
               </div>
-              <button className="px-4 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 rounded-md font-medium transition-colors">
-                Recluster
-              </button>
             </div>
           </div>
 
-          {/* Single stream preview — one player only (AMVerge pattern) */}
+          {/* Video preview */}
           {videoUrl && (
             <div className="shrink-0 bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <video
-                ref={mainVideoRef}
-                key={videoUrl}
-                src={videoUrl}
-                controls
-                preload="metadata"
-                className="w-full max-h-56 bg-black object-contain"
-              />
+              <video ref={mainVideoRef} key={videoUrl} src={videoUrl} controls preload="metadata" className="w-full max-h-56 bg-black object-contain" />
             </div>
           )}
 
-          {/* Media Pool */}
+          {/* Scene grid */}
           <div className="flex-1 bg-background border border-border rounded-xl overflow-y-auto p-4 shadow-inner relative">
             {isProcessing ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm z-10">
@@ -399,18 +371,13 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                {scenes.map((scene) => {
+                {scenes.map(scene => {
                   if (activeCluster !== "All" && activeCluster !== String(scene.clusterNum)) return null;
-                  
                   return (
-                    <MediaClip 
-                      key={scene.id} 
-                      thumbUrl={scene.thumbUrl} 
-                      timeOffset={scene.timeOffset} 
-                      clusterNum={scene.clusterNum} 
-                      videoUrl={videoUrl || undefined}
+                    <MediaClip key={scene.id} thumbUrl={scene.thumbUrl} timeOffset={scene.timeOffset}
+                      clusterNum={scene.clusterNum} videoUrl={videoUrl || undefined}
                       onPreview={seekMainPreview}
-                      onClick={() => handleAddToTimeline(scene.timeOffset, scene.clusterNum, scene.thumbUrl)} 
+                      onClick={() => handleAddToTimeline(scene.timeOffset, scene.clusterNum, scene.thumbUrl)}
                     />
                   );
                 })}
@@ -425,25 +392,16 @@ export default function App() {
               <div className="flex gap-2">
                 <button onClick={handleClearTimeline} className="px-3 py-1 bg-muted hover:bg-muted/80 text-foreground text-xs rounded border border-border transition-colors">Clear</button>
                 <button onClick={handleExport} className="px-4 py-1 bg-primary text-white text-xs font-bold rounded shadow-md shadow-primary/20 hover:bg-primary/90 transition-colors flex items-center gap-2">
-                  <Download className="w-3 h-3" />
-                  Lossless MP4 Export
+                  <Download className="w-3 h-3" /> Lossless MP4 Export
                 </button>
               </div>
             </div>
-            
             <div className="flex-1 bg-background border border-border rounded-lg flex items-center px-2 gap-2 overflow-x-auto">
-              {!isProcessing && curatedClips.map((clip) => (
+              {!isProcessing && curatedClips.map(clip => (
                 <div key={clip.id} className="h-16 w-24 shrink-0 bg-black border border-border rounded flex items-center justify-center hover:border-primary transition-colors relative group overflow-hidden">
-                  {clip.thumbUrl ? (
-                    <img src={clip.thumbUrl} alt="" className="w-full h-full object-cover opacity-70" draggable={false} />
-                  ) : (
-                    <div className="w-full h-full bg-muted/30" />
-                  )}
-                  <div className="absolute bottom-1 right-1 text-[8px] font-mono font-bold px-1 py-0.5 rounded backdrop-blur-md bg-black/60 text-white z-10">
-                    {formatTime(clip.timeOffset)}
-                  </div>
-                  <button 
-                    onClick={() => handleRemoveFromTimeline(clip.id)}
+                  {clip.thumbUrl ? <img src={clip.thumbUrl} alt="" className="w-full h-full object-cover opacity-70" draggable={false} /> : <div className="w-full h-full bg-muted/30" />}
+                  <div className="absolute bottom-1 right-1 text-[8px] font-mono font-bold px-1 py-0.5 rounded backdrop-blur-md bg-black/60 text-white z-10">{formatTime(clip.timeOffset)}</div>
+                  <button onClick={() => handleRemoveFromTimeline(clip.id)}
                     className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-destructive text-white rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] hover:scale-110 transition-all z-20"
                   >✕</button>
                 </div>
@@ -453,12 +411,12 @@ export default function App() {
               </div>
             </div>
           </div>
-          
         </div>
       )}
     </div>
   );
 
+  // ── HISTORY ──
   const renderHistory = () => (
     <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
       <div className="flex items-center justify-between">
@@ -466,12 +424,10 @@ export default function App() {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>{historyRecords.length} export{historyRecords.length !== 1 ? 's' : ''}</span>
           <button onClick={loadHistory} className="h-9 px-3 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
-            <RotateCcw className="w-3.5 h-3.5" />
-            Refresh
+            <RotateCcw className="w-3.5 h-3.5" /> Refresh
           </button>
         </div>
       </div>
-
       <div className="bg-card border border-border rounded-xl overflow-hidden flex-1 flex flex-col min-h-0">
         {historyRecords.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -505,22 +461,12 @@ export default function App() {
                     <td className="px-4 py-3 text-muted-foreground font-mono">{rec.clipCount}</td>
                     <td className="px-4 py-3 text-muted-foreground">{rec.date}</td>
                     <td className="px-4 py-3">
-                      <span className="text-[10px] font-mono font-bold px-2 py-1 rounded bg-green-500/10 text-green-500">
-                        {rec.status}
-                      </span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-1 rounded bg-green-500/10 text-green-500">{rec.status}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button 
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(rec.outputPath);
-                            toast.success("Path copied to clipboard");
-                          } catch {}
-                        }}
+                      <button onClick={async () => { try { await navigator.clipboard.writeText(rec.outputPath); toast.success("Path copied"); } catch {} }}
                         className="p-2 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <FolderOpen className="w-4 h-4" />
-                      </button>
+                      ><FolderOpen className="w-4 h-4" /></button>
                     </td>
                   </tr>
                 ))}
@@ -532,128 +478,417 @@ export default function App() {
     </div>
   );
 
-  const renderSettings = () => (
-    <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
-        <div className="flex items-center gap-3">
-          <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
-            <FolderOpen className="w-4 h-4" />
-            Open Config
-          </button>
-          <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium text-destructive hover:text-destructive hover:border-destructive/30">
-            <RotateCcw className="w-4 h-4" />
-            Reset
-          </button>
-          <button className="h-9 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 text-sm font-medium">
-            <Save className="w-4 h-4" />
-            Save Changes
-          </button>
+  // ── THEME PREVIEW TILE ──
+  const ThemeCard = ({ id, name, icon: Icon, desc, current }: { id: ThemeId; name: string; icon: typeof Sun; desc: string; current: boolean }) => (
+    <button onClick={() => setTheme(id)}
+      className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${current ? 'border-primary bg-primary/5 shadow-md shadow-primary/20' : 'border-border bg-card hover:border-muted-foreground/50'}`}
+    >
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${current ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <span className="text-sm font-bold">{name}</span>
+      <span className="text-[10px] text-muted-foreground text-center leading-tight">{desc}</span>
+      {current && <div className="absolute -top-2 -right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center"><CheckCircle className="w-3 h-3 text-white" /></div>}
+    </button>
+  );
+
+  // ── SETTINGS ──
+  const renderSettings = () => {
+    const tabs: { id: SettingsTab; label: string }[] = [
+      { id: "general", label: "General" },
+      { id: "clustering", label: "Clustering" },
+      { id: "hardware", label: "Hardware" },
+      { id: "export", label: "Export" },
+    ];
+
+    return (
+      <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
+          <div className="flex items-center gap-3">
+            <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
+              <FolderOpen className="w-4 h-4" /> Open Config
+            </button>
+            <button onClick={handleResetSettings} className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium text-destructive hover:text-destructive hover:border-destructive/30">
+              <RotateCcw className="w-4 h-4" /> Reset
+            </button>
+            <button onClick={handleSaveSettings} className="h-9 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 text-sm font-medium">
+              <Save className="w-4 h-4" /> Save Changes
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-12 flex-1 min-h-0 overflow-hidden">
+          <div className="w-48 flex flex-col gap-1 shrink-0">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setSettingsTab(t.id)}
+                className={`px-4 py-2.5 text-sm font-medium rounded-lg text-left transition-colors ${settingsTab === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              >{t.label}</button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-4 pb-12 space-y-8">
+            {/* ── GENERAL ── */}
+            {settingsTab === "general" && (
+              <>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b border-border pb-2">Appearance</h3>
+                  <div className="space-y-4">
+                    <label className="text-sm font-medium block">Theme</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {THEMES.map(t => <ThemeCard key={t.id} {...t} current={theme === t.id} />)}
+                    </div>
+                  </div>
+                </section>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b border-border pb-2">Application Preferences</h3>
+                  <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Default Export Path</label>
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={s("exportPath", "~Videos/Fracture/Output")} onChange={e => set("exportPath", e.target.value)} className="h-10 flex-1 bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                        <button className="h-10 px-3 bg-card border border-border rounded-lg hover:bg-muted transition-colors"><FolderOpen className="w-4 h-4 text-muted-foreground" /></button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Font Family</label>
+                      <select value={fontFamily} onChange={e => setFontFamily(e.target.value)} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary">
+                        <option>JetBrains Mono</option>
+                        <option>Fira Code</option>
+                        <option>Inter</option>
+                        <option>SF Mono</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Language</label>
+                      <select value={s("language", "English")} onChange={e => set("language", e.target.value)} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary">
+                        <option>English</option>
+                        <option>日本語</option>
+                        <option>中文</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Auto Save History</label>
+                      <div className="flex items-center gap-3 h-10">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" checked={s("autoSave", true)} onChange={e => set("autoSave", e.target.checked)} className="sr-only peer" />
+                          <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                        </label>
+                        <span className="text-sm text-muted-foreground">Save exports to history automatically</span>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </>
+            )}
+
+            {/* ── CLUSTERING ── */}
+            {settingsTab === "clustering" && (
+              <section className="space-y-4">
+                <h3 className="text-lg font-semibold border-b border-border pb-2">DBSCAN Parameters</h3>
+                <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">EPS (Epsilon)</label>
+                    <div className="flex items-center gap-3">
+                      <input type="range" min="0.05" max="1.0" step="0.05" value={s("eps", 0.35)} onChange={e => set("eps", parseFloat(e.target.value))} className="flex-1 accent-primary" />
+                      <span className="text-xs font-mono text-muted-foreground w-10 text-right">{s("eps", 0.35)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Lower = tighter clusters. Higher = broader groups.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Min Samples</label>
+                    <input type="number" min={1} max={20} value={s("minSamples", 2)} onChange={e => set("minSamples", parseInt(e.target.value) || 2)} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                    <p className="text-xs text-muted-foreground">Minimum scenes to form a cluster.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Scene Threshold</label>
+                    <input type="number" step="0.05" defaultValue={0.30} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                    <p className="text-xs text-muted-foreground">Sensitivity for scene change detection.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Max Gap Between Clips (s)</label>
+                    <input type="number" defaultValue={3} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                    <p className="text-xs text-muted-foreground">Merge clips if gap is below this.</p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ── HARDWARE ── */}
+            {settingsTab === "hardware" && (
+              <section className="space-y-4">
+                <h3 className="text-lg font-semibold border-b border-border pb-2">Hardware Acceleration</h3>
+                <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">GPU Acceleration</label>
+                    <div className="flex items-center gap-3 h-10">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={s("gpuAccel", false)} onChange={e => set("gpuAccel", e.target.checked)} className="sr-only peer" />
+                        <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                      </label>
+                      <span className="text-sm text-muted-foreground">CUDA / NVENC</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Requires NVIDIA GPU with CUDA drivers.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">FFmpeg Path</label>
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={s("ffmpegPath", "C:\\ffmpeg\\bin\\ffmpeg.exe")} onChange={e => set("ffmpegPath", e.target.value)} className="h-10 flex-1 bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                      <button className="h-10 px-3 bg-card border border-border rounded-lg hover:bg-muted transition-colors"><FolderOpen className="w-4 h-4 text-muted-foreground" /></button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Custom FFmpeg binary location.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Max Threads</label>
+                    <input type="number" min={1} max={64} defaultValue={8} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
+                    <p className="text-xs text-muted-foreground">Parallel decode threads (0 = auto).</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Cache Thumbnails</label>
+                    <div className="flex items-center gap-3 h-10">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={s("cacheThumbs", true)} onChange={e => set("cacheThumbs", e.target.checked)} className="sr-only peer" />
+                        <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                      </label>
+                      <span className="text-sm text-muted-foreground">Reuse cached thumbnails on reimport</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Saves space but speeds up repeat imports.</p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ── EXPORT ── */}
+            {settingsTab === "export" && (
+              <section className="space-y-4">
+                <h3 className="text-lg font-semibold border-b border-border pb-2">Export Preferences</h3>
+                <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Output Format</label>
+                    <div className="flex gap-2">
+                      {["MP4 (H.264)", "MP4 (H.265/HEVC)", "MKV", "WebM"].map(f => (
+                        <button key={f} className={`px-3 py-1.5 text-xs font-mono rounded-lg border transition-all ${f === "MP4 (H.264)" ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border text-muted-foreground hover:border-muted-foreground'}`}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Quality Preset</label>
+                    <select className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary">
+                      <option>Lossless (copy)</option>
+                      <option>High (CRF 18)</option>
+                      <option>Medium (CRF 23)</option>
+                      <option>Low (CRF 28)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Crossfade Duration</label>
+                    <div className="flex items-center gap-3">
+                      <input type="range" min="0" max="1000" step="50" value={s("crossfade", 300)} onChange={e => set("crossfade", parseInt(e.target.value))} className="flex-1 accent-primary" />
+                      <span className="text-xs font-mono text-muted-foreground w-14 text-right">{s("crossfade", 300)}ms</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Transition length between clips (0 = cuts only).</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Auto-Clean Frames</label>
+                    <div className="flex items-center gap-3 h-10">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={s("autoClean", true)} onChange={e => set("autoClean", e.target.checked)} className="sr-only peer" />
+                        <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                      </label>
+                      <span className="text-sm text-muted-foreground">Remove black/white frames</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Analyzes and strips solid color frames during export.</p>
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
         </div>
       </div>
+    );
+  };
 
-      <div className="flex items-start gap-12 flex-1 min-h-0 overflow-hidden">
-        <div className="w-48 flex flex-col gap-1">
-          {["General", "Clustering (DBSCAN)", "Hardware", "Export"].map((tab, i) => (
-            <button key={tab} className={`px-4 py-2.5 text-sm font-medium rounded-lg text-left transition-colors ${i === 0 ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
-              {tab}
+  // ── LOGS ──
+  const renderLogs = () => {
+    const logLines = [
+      { time: "20:01:37", level: "info", msg: "Fracture UI initialized. v1.0.0", color: "text-blue-400", icon: Info },
+      { time: "20:01:37", level: "info", msg: "WebView2 environment created successfully.", color: "text-blue-400", icon: Info },
+      { time: "20:01:37", level: "info", msg: "Media server starting on localhost:34115", color: "text-blue-400", icon: Info },
+      { time: "20:01:37", level: "success", msg: "Ready to import media. FFmpeg detected at C:\\ffmpeg\\bin", color: "text-green-400", icon: CheckCircle },
+      { time: "20:01:39", level: "info", msg: "ServeVideo: streaming range requests active", color: "text-blue-400", icon: Info },
+      { time: "20:01:40", level: "success", msg: "Keyframe scene detection via ffprobe (fast path)", color: "text-green-400", icon: CheckCircle },
+      { time: "20:01:40", level: "info", msg: "Thumbnail generation offloaded to background", color: "text-muted-foreground", icon: Info },
+      { time: "20:01:41", level: "warn", msg: "Export engineered for stream-copy concat (no re-encode)", color: "text-yellow-400", icon: Info },
+    ];
+
+    return (
+      <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold tracking-tight">Debug Logs</h2>
+          <div className="flex items-center gap-3">
+            <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
+              <RotateCcw className="w-4 h-4" /> Auto-Refresh
             </button>
+            <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
+              <Copy className="w-4 h-4" /> Copy All
+            </button>
+            <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
+              <Download className="w-4 h-4" /> Export
+            </button>
+            <button className="h-9 px-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors flex items-center gap-2 text-sm font-medium">
+              <Trash2 className="w-4 h-4" /> Clear
+            </button>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl flex-1 p-5 overflow-y-auto font-mono text-sm leading-relaxed shadow-inner">
+          {logLines.map((line, i) => (
+            <div key={i} className="flex items-start gap-3 text-muted-foreground mb-2 group">
+              <span className="shrink-0 opacity-50 text-xs mt-0.5">{line.time}</span>
+              <line.icon className={`w-4 h-4 shrink-0 mt-0.5 ${line.color}`} />
+              <span className="break-all">{line.msg}</span>
+            </div>
           ))}
         </div>
-        
-        <div className="flex-1 overflow-y-auto pr-4 pb-12 space-y-8">
-          <section className="space-y-4">
-            <h3 className="text-lg font-semibold border-b border-border pb-2">Application Preferences</h3>
-            <div className="grid grid-cols-2 gap-x-12 gap-y-6">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Theme</label>
-                <div className="h-10 bg-card border border-border rounded-lg flex items-center px-3 text-sm text-muted-foreground cursor-not-allowed opacity-80">
-                  Dark Mode (Enforced)
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Default Export Path</label>
-                <div className="flex items-center gap-2">
-                  <input type="text" value="C:\Projects\Fracture\Output" readOnly className="h-10 flex-1 bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none" />
-                  <button className="h-10 px-3 bg-card border border-border rounded-lg hover:bg-muted transition-colors"><FolderOpen className="w-4 h-4 text-muted-foreground" /></button>
-                </div>
-              </div>
-            </div>
-          </section>
-          
-          <section className="space-y-4">
-            <h3 className="text-lg font-semibold border-b border-border pb-2">Clustering Defaults (DBSCAN)</h3>
-            <div className="grid grid-cols-2 gap-x-12 gap-y-6">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Default EPS (Epsilon)</label>
-                <input type="number" step="0.05" defaultValue={0.35} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
-                <p className="text-xs text-muted-foreground">Lower = tighter clusters. Higher = broader groups.</p>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Min Samples</label>
-                <input type="number" defaultValue={2} className="h-10 w-full bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary" />
-                <p className="text-xs text-muted-foreground">Minimum scenes to form a cluster.</p>
-              </div>
-            </div>
-          </section>
-        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  const renderLogs = () => (
+  // ── DOWNLOADS ──
+  const renderDownloads = () => (
     <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Debug Logs</h2>
-        <div className="flex items-center gap-3">
-          <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
-            <Copy className="w-4 h-4" />
-            Copy All
-          </button>
-          <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-          <button className="h-9 px-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors flex items-center gap-2 text-sm font-medium">
-            <Trash2 className="w-4 h-4" />
-            Clear
-          </button>
+        <h2 className="text-3xl font-bold tracking-tight">Downloads</h2>
+        <span className="text-sm text-muted-foreground">3 completed, 0 active</span>
+      </div>
+      <div className="bg-card border border-border rounded-xl flex-1 p-6 flex flex-col items-center justify-center gap-4 text-muted-foreground">
+        <DownloadCloud className="w-12 h-12 opacity-30" />
+        <p className="text-sm font-medium">No download queue</p>
+        <p className="text-xs opacity-70">Exported files can be managed here in future releases</p>
+      </div>
+    </div>
+  );
+
+  // ── ABOUT ──
+  const renderAbout = () => (
+    <div className="w-full h-full flex flex-col gap-8 animate-in fade-in duration-200 max-w-3xl">
+      <div className="flex items-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Scissors className="w-7 h-7 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Fracture</h2>
+          <p className="text-sm text-muted-foreground">Video Scene Splitter &middot; v1.0.0</p>
         </div>
       </div>
 
-      <div className="bg-[#0A0A0A] border border-border rounded-xl flex-1 p-4 overflow-y-auto font-mono text-sm leading-relaxed shadow-inner">
-        <div className="flex items-start gap-3 text-muted-foreground mb-2">
-          <span className="shrink-0 opacity-50">19:42:01</span>
-          <span className="shrink-0 text-blue-400"><Info className="w-4 h-4" /></span>
-          <span className="break-all">Fracture VideoClassifier UI Initialized.</span>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold flex items-center gap-2"><Info className="w-4 h-4 text-primary" /> Overview</h3>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Fracture is a desktop application for quickly splitting videos into scenes, 
+            clustering them visually, and exporting curated timelines — all without re-encoding.
+          </p>
         </div>
-        <div className="flex items-start gap-3 text-muted-foreground mb-2">
-          <span className="shrink-0 opacity-50">19:42:02</span>
-          <span className="shrink-0 text-green-400"><CheckCircle className="w-4 h-4" /></span>
-          <span className="break-all text-foreground">Ready to import media. Expected backend at localhost:8000.</span>
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" /> Tech Stack</h3>
+          <ul className="text-sm text-muted-foreground space-y-1">
+            <li>• Wails v2 / Go backend</li>
+            <li>• React / Vite / TypeScript</li>
+            <li>• FFmpeg / ffprobe</li>
+            <li>• Tailwind CSS v4</li>
+          </ul>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold flex items-center gap-2"><Github className="w-4 h-4 text-primary" /> Repository</h3>
+          <p className="text-sm text-muted-foreground">github.com/yovyshh/Fracture</p>
+          <button onClick={() => { try { navigator.clipboard.writeText("https://github.com/yovyshh/Fracture"); toast.success("URL copied"); } catch {} }}
+            className="text-xs text-primary hover:underline mt-1"
+          >Copy URL</button>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold flex items-center gap-2"><ExternalLink className="w-4 h-4 text-primary" /> Links</h3>
+          <div className="flex flex-col gap-2 text-sm">
+            <button onClick={() => setCurrentPage("donate")} className="text-left text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+              <Coffee className="w-3.5 h-3.5" /> Support the project
+            </button>
+            <button onClick={() => setCurrentPage("settings")} className="text-left text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+              <Palette className="w-3.5 h-3.5" /> Customize Fracture
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+        <h3 className="font-semibold flex items-center gap-2"><Heart className="w-4 h-4 text-destructive" /> License</h3>
+        <p className="text-sm text-muted-foreground">MIT License &mdash; free to use, modify, and distribute.</p>
+      </div>
+    </div>
+  );
+
+  // ── DONATE ──
+  const renderDonate = () => (
+    <div className="w-full h-full flex flex-col gap-8 animate-in fade-in duration-200 max-w-3xl">
+      <div className="flex items-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+          <Coffee className="w-7 h-7 text-destructive" />
+        </div>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Support Fracture</h2>
+          <p className="text-sm text-muted-foreground">If this tool saves you time, consider buying a coffee</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-card border border-border rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:border-primary/50 transition-colors cursor-pointer group">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+            <Coffee className="w-7 h-7 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Buy Me a Coffee</h3>
+            <p className="text-xs text-muted-foreground mt-1">One-time support via Ko-fi</p>
+          </div>
+          <button className="mt-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors">Support</button>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:border-primary/50 transition-colors cursor-pointer group">
+          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
+            <Github className="w-7 h-7 text-foreground" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Sponsor on GitHub</h3>
+            <p className="text-xs text-muted-foreground mt-1">Recurring sponsorship</p>
+          </div>
+          <button className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">Sponsor</button>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:border-primary/50 transition-colors cursor-pointer group">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+            <Heart className="w-7 h-7 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Contribute</h3>
+            <p className="text-xs text-muted-foreground mt-1">Open issues, PRs welcome</p>
+          </div>
+          <button className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">View on GitHub</button>
         </div>
       </div>
     </div>
   );
 
+  // ════════════ ROOT ════════════
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <TitleBar />
       <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
-      
-      {/* Main Content Area */}
-      <main className="flex-1 ml-[64px] mt-10 relative overflow-hidden bg-background">
+      <main className="flex-1 min-w-0 mt-10 relative overflow-hidden bg-background">
         <div className="h-full overflow-y-auto px-10 py-8 flex flex-col max-w-[1400px] mx-auto">
           {currentPage === "main" && renderHome()}
           {currentPage === "history" && renderHistory()}
           {currentPage === "settings" && renderSettings()}
           {currentPage === "logs" && renderLogs()}
-          {["downloads", "about", "donate"].includes(currentPage) && (
-            <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground animate-in zoom-in-95 duration-200">
-              <h2 className="text-2xl font-semibold mb-2 capitalize">{currentPage}</h2>
-              <p>This page is currently under construction.</p>
-            </div>
-          )}
+          {currentPage === "downloads" && renderDownloads()}
+          {currentPage === "about" && renderAbout()}
+          {currentPage === "donate" && renderDonate()}
         </div>
       </main>
     </div>

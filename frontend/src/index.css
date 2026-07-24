@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -30,7 +31,7 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
-:root, .dark {
+:root, .dark, .theme-moonlight {
   --radius: 1rem;
   --background: #0B0B0B;
   --foreground: #FFFFFF;
@@ -50,6 +51,69 @@
   --border: #2A2A2A;
   --input: #2A2A2A;
   --ring: #8B5CF6;
+}
+
+.theme-amethyst {
+  --background: #0D0B14;
+  --foreground: #F5F0FF;
+  --card: #1A1525;
+  --card-foreground: #F5F0FF;
+  --popover: #1A1525;
+  --popover-foreground: #F5F0FF;
+  --primary: #A78BFA;
+  --primary-foreground: #FFFFFF;
+  --secondary: #231D35;
+  --secondary-foreground: #F5F0FF;
+  --muted: #231D35;
+  --muted-foreground: #9B8EC0;
+  --accent: #2D2540;
+  --accent-foreground: #F5F0FF;
+  --destructive: #F87171;
+  --border: #2D2540;
+  --input: #2D2540;
+  --ring: #A78BFA;
+}
+
+.theme-frost {
+  --background: #0F172A;
+  --foreground: #E2E8F0;
+  --card: #1E293B;
+  --card-foreground: #E2E8F0;
+  --popover: #1E293B;
+  --popover-foreground: #E2E8F0;
+  --primary: #38BDF8;
+  --primary-foreground: #0F172A;
+  --secondary: #334155;
+  --secondary-foreground: #E2E8F0;
+  --muted: #334155;
+  --muted-foreground: #94A3B8;
+  --accent: #3B4A63;
+  --accent-foreground: #E2E8F0;
+  --destructive: #F87171;
+  --border: #334155;
+  --input: #334155;
+  --ring: #38BDF8;
+}
+
+.theme-ember {
+  --background: #120D0B;
+  --foreground: #FFF8F0;
+  --card: #1E1612;
+  --card-foreground: #FFF8F0;
+  --popover: #1E1612;
+  --popover-foreground: #FFF8F0;
+  --primary: #FB923C;
+  --primary-foreground: #120D0B;
+  --secondary: #2A1F19;
+  --secondary-foreground: #FFF8F0;
+  --muted: #2A1F19;
+  --muted-foreground: #B89B84;
+  --accent: #33261E;
+  --accent-foreground: #FFF8F0;
+  --destructive: #F87171;
+  --border: #33261E;
+  --input: #33261E;
+  --ring: #FB923C;
 }
 
 @layer base {
