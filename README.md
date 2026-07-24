@@ -1,11 +1,6 @@
-```text
-          ______              _                  _
-         |  ____|            | |                 |
-         | |__ _ __ __ _  ___| |_ _   _ _ __ ___|
-         |  __| '__/ _` |/ __| __| | | | '__/ _ \
-         | |  | | | (_| | (__| |_| |_| | | |  __/
-         |_|  |_|  \__,_|\___|\__|\__,_|_|  \___|
-```
+<p align="center">
+  <img src="assets/ascii-title.png" alt="Fracture ASCII Title" width="500">
+</p>
 
 Fast desktop scene-splitting software for editors.
 
