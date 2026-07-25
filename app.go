@@ -1297,6 +1297,8 @@ func (a *App) DownloadVideo(urlStr, formatID, destType string) (string, error) {
 
 	// Lenient progress regex: [download]  XX.X% of ~YY.YMiB at ZZ.ZMiB/s ETA 00:00
 	progRe := regexp.MustCompile(`\[download\]\s+([\d.]+)%.*?of\s+~?([\d.]+[KMGT]?i?B).*?(?:at\s+([\d.]+[KMGT]?i?B/s).*?ETA\s+(\S+)|in\s+(\S+))`)
+	destRe := regexp.MustCompile(`\[download\]\s+Destination:\s+(.+)`)
+	var downloaded string
 	progDone := make(chan struct{})
 	go func() {
 		defer close(progDone)
@@ -1304,6 +1306,10 @@ func (a *App) DownloadVideo(urlStr, formatID, destType string) (string, error) {
 		scanner.Buffer(make([]byte, 64*1024), 256*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
+			// Capture destination path from yt-dlp output
+			if m := destRe.FindStringSubmatch(line); len(m) > 1 {
+				downloaded = strings.TrimSpace(m[1])
+			}
 			if m := progRe.FindStringSubmatch(line); len(m) > 4 {
 				pct, _ := strconv.ParseFloat(m[1], 64)
 				speed, eta := "", ""
@@ -1330,18 +1336,29 @@ func (a *App) DownloadVideo(urlStr, formatID, destType string) (string, error) {
 	}
 	<-progDone
 	a.emitDownloadProgress(100, "", "", "", "Complete")
-	var downloaded string
-	entries, _ := os.ReadDir(saveDir)
-	for _, e := range entries {
-		if !e.IsDir() {
-			ext := strings.ToLower(filepath.Ext(e.Name()))
-			if ext == ".mp4" || ext == ".mkv" || ext == ".webm" {
-				fullPath := filepath.Join(saveDir, e.Name())
-				if downloaded == "" {
-					downloaded = fullPath
+
+	// Fallback: if destination wasn't captured from yt-dlp output, scan saveDir
+	if downloaded == "" {
+		entries, _ := os.ReadDir(saveDir)
+		var newestFile string
+		var newestTime time.Time
+		for _, e := range entries {
+			if !e.IsDir() {
+				ext := strings.ToLower(filepath.Ext(e.Name()))
+				if ext == ".mp4" || ext == ".mkv" || ext == ".webm" || ext == ".m4a" || ext == ".m4v" || ext == ".mov" || ext == ".avi" || ext == ".ts" {
+					fullPath := filepath.Join(saveDir, e.Name())
+					info, err := e.Info()
+					if err != nil {
+						continue
+					}
+					if info.ModTime().After(newestTime) {
+						newestTime = info.ModTime()
+						newestFile = fullPath
+					}
 				}
 			}
 		}
+		downloaded = newestFile
 	}
 	if destType == "import" && downloaded != "" {
 		a.serverMu.Lock()
