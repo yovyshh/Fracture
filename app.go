@@ -25,6 +25,16 @@ type App struct {
 	serverPort int
 	videoPath  string
 	thumbDir   string
+	clipDir    string
+}
+
+type ProgressPayload struct {
+	Pct   int    `json:"pct"`
+	Stage string `json:"stage"`
+}
+
+func (a *App) emitProgress(pct int, stage string) {
+	runtime.EventsEmit(a.ctx, "import-progress", ProgressPayload{Pct: pct, Stage: stage})
 }
 
 func NewApp() *App {
@@ -49,6 +59,9 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.thumbDir != "" {
 		os.RemoveAll(a.thumbDir)
 	}
+	if a.clipDir != "" {
+		os.RemoveAll(a.clipDir)
+	}
 }
 
 // startMediaServer runs a single localhost HTTP server for video + thumbnail streaming.
@@ -69,6 +82,7 @@ func (a *App) startMediaServer() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/video", a.handleVideo)
 	mux.HandleFunc("/thumb/", a.handleThumb)
+	mux.HandleFunc("/clip/", a.handleClip)
 
 	a.server = &http.Server{Handler: mux}
 	go a.server.Serve(listener)
@@ -163,6 +177,39 @@ func (a *App) handleThumb(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, stat.ModTime(), f)
 }
 
+func (a *App) handleClip(w http.ResponseWriter, r *http.Request) {
+	a.cors(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	a.serverMu.Lock()
+	dir := a.clipDir
+	a.serverMu.Unlock()
+	if dir == "" {
+		http.Error(w, "no clips", http.StatusNotFound)
+		return
+	}
+
+	name := filepath.Base(strings.TrimPrefix(r.URL.Path, "/clip/"))
+	if name == "" || name == "." || strings.Contains(name, "..") {
+		http.Error(w, "bad path", http.StatusBadRequest)
+		return
+	}
+	full := filepath.Join(dir, name)
+	f, err := os.Open(full)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	stat, _ := f.Stat()
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeContent(w, r, name, stat.ModTime(), f)
+}
+
 type ExportRecord struct {
 	VideoName   string   `json:"videoName"`
 	OutputPath  string   `json:"outputPath"`
@@ -242,11 +289,19 @@ func (a *App) GenerateThumbnails(videoPath string, timeOffsets []int) (string, e
 		URL        string `json:"url"`
 	}
 
+	a.emitProgress(40, "Generating thumbnails...")
 	// Cap concurrency so we don't spawn 100 ffmpeg processes
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	results := make([]thumbItem, 0, len(timeOffsets))
+	total := len(timeOffsets)
+	var completed int
+
+	if total == 0 {
+		a.emitProgress(100, "Ready")
+		return "[]", nil
+	}
 
 	for _, off := range timeOffsets {
 		off := off
@@ -282,10 +337,15 @@ func (a *App) GenerateThumbnails(videoPath string, timeOffsets []int) (string, e
 				TimeOffset: off,
 				URL:        fmt.Sprintf("http://127.0.0.1:%d/thumb/%s", port, name),
 			})
+			completed++
+			n := completed
+			pct := 40 + (n * 55 / total)
 			mu.Unlock()
+			a.emitProgress(pct, fmt.Sprintf("Thumbnail %d of %d", n, total))
 		}()
 	}
 	wg.Wait()
+	a.emitProgress(100, "Ready")
 
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].TimeOffset < results[j].TimeOffset
@@ -311,71 +371,178 @@ func (a *App) SelectSavePath(defaultName string) (string, error) {
 	return path, nil
 }
 
-// GetSceneClusters finds cut points the AMVerge way: keyframe packet timestamps
-// via ffprobe (no full-video decode). Sub-second on most files.
-// Returns JSON [{timeOffset:int, clusterNum:string}, ...]
+// GetSceneClusters finds cut points via keyframe packet timestamps, splits the
+// video into individual scene .mp4 files (AMVerge-style), and returns the scene list.
+// Returns JSON: [{timeOffset:int, clusterNum:string, clipUrl:string, ...}]
 func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	if videoPath == "" {
 		return "[]", fmt.Errorf("no video path")
 	}
 
+	if err := a.startMediaServer(); err != nil {
+		return "[]", err
+	}
+
+	a.emitProgress(10, "Scanning keyframes...")
 	duration := probeDuration(videoPath)
 	times := probeKeyframeTimes(videoPath)
 
-	// Fallback: even spacing if keyframe metadata is missing/broken
 	if len(times) < 2 {
 		times = evenSampleTimes(duration, 2.0)
 	}
-
-	// Always include start
 	if len(times) == 0 || times[0] > 0.15 {
 		times = append([]float64{0}, times...)
 	}
-
-	// Merge tiny segments (AMVerge merge_short_scenes)
 	times = mergeMinGap(times, 0.75)
 
-	// Cap UI density
 	const maxScenes = 64
 	if len(times) > maxScenes {
 		times = thinTimes(times, maxScenes)
 	}
 
-	type clusterItem struct {
+	// ── Semantic analysis: extract frame colours + detect black/white ──
+	a.emitProgress(20, "Analysing frame colours...")
+	type frameColor struct {
+		r, g, b    float64
+		isNoise    bool
+		noiseLabel string
+	}
+	frameColors := make([]frameColor, len(times))
+	cleanIdx := make([]int, 0)
+	for i, t := range times {
+		offset := int(t + 0.5)
+		if t < 0 {
+			offset = 0
+		}
+		r, g, b, err := getFrameColor(videoPath, offset)
+		if err != nil {
+			r, g, b = 128, 128, 128
+		}
+		fc := frameColor{r: r, g: g, b: b}
+		if bw, why := isBlackOrWhite(r, g, b); bw {
+			fc.isNoise = true
+			fc.noiseLabel = why
+		} else {
+			cleanIdx = append(cleanIdx, i)
+		}
+		frameColors[i] = fc
+	}
+
+	// ── DBSCAN clustering on clean frames ──
+	a.emitProgress(25, "Clustering scenes by colour similarity...")
+	clusterLabels := make([]int, len(times))
+	for i := range clusterLabels {
+		clusterLabels[i] = -1
+	}
+
+	if len(cleanIdx) >= 3 {
+		points := make([][]float64, len(cleanIdx))
+		for j, idx := range cleanIdx {
+			points[j] = []float64{frameColors[idx].r, frameColors[idx].g, frameColors[idx].b}
+		}
+		labels := dbscanLabels(points, 45.0, 2)
+		for j, idx := range cleanIdx {
+			clusterLabels[idx] = labels[j]
+		}
+	}
+
+	// ── Split video at cut points ──
+	a.emitProgress(30, "Splitting scenes...")
+
+	// Cut points: skip first (0.0), use remaining as scene boundaries
+	cutPoints := times[1:]
+
+	// Create clip temp dir and clean old one
+	clipDir, err := os.MkdirTemp("", "fracture-clips-*")
+	if err != nil {
+		return "[]", err
+	}
+
+	a.serverMu.Lock()
+	if a.clipDir != "" {
+		os.RemoveAll(a.clipDir)
+	}
+	a.clipDir = clipDir
+	port := a.serverPort
+	a.serverMu.Unlock()
+
+	// ffmpeg segment muxer - split into individual scene files
+	fileBase := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
+	segFileBase := strings.ReplaceAll(fileBase, "%", "%%")
+	outputPattern := filepath.Join(clipDir, segFileBase+"_%04d.mp4")
+
+	segmentArgs := []string{
+		"-y",
+		"-i", videoPath,
+		"-map", "0:v:0",
+		"-map", "0:a?",
+		"-c:v", "copy",
+		"-c:a", "aac",
+		"-b:a", "160k",
+		"-ac", "2",
+		"-ar", "48000",
+		"-f", "segment",
+	}
+	if len(cutPoints) > 0 {
+		cutStrs := make([]string, len(cutPoints))
+		for i, c := range cutPoints {
+			cutStrs[i] = strconv.FormatFloat(c, 'f', 6, 64)
+		}
+		segmentArgs = append(segmentArgs, "-segment_times", strings.Join(cutStrs, ","))
+	}
+	segmentArgs = append(segmentArgs, "-reset_timestamps", "1", outputPattern)
+
+	cmd := exec.Command("ffmpeg", segmentArgs...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "[]", fmt.Errorf("ffmpeg segment failed: %s: %s", err, string(out))
+	}
+
+	a.emitProgress(50, "Collecting scenes...")
+
+	// Collect created scene files
+	type sceneResult struct {
 		TimeOffset int    `json:"timeOffset"`
 		ClusterNum string `json:"clusterNum"`
+		ClipURL    string `json:"clipUrl"`
 	}
+	scenes := make([]sceneResult, 0, len(times))
 
-	// Simple sequential clusters (5 buckets by position) — real CLIP clustering can come later
-	result := make([]clusterItem, 0, len(times))
-	for i, t := range times {
-		if t < 0 {
-			t = 0
-		}
-		if duration > 0 && t >= duration {
-			continue
-		}
-		// Group into ~5 clusters by timeline fifths
-		cluster := 0
-		if duration > 0 {
-			cluster = int((t / duration) * 5)
-			if cluster > 4 {
-				cluster = 4
+	for i, startTime := range times {
+		sceneFile := filepath.Join(clipDir, fmt.Sprintf(fileBase+"_%04d.mp4", i))
+		if _, err := os.Stat(sceneFile); err == nil {
+			cn := "0"
+			fc := frameColors[i]
+			if fc.isNoise {
+				cn = "Noise" // black or white frame
+			} else if clusterLabels[i] > 0 {
+				cn = strconv.Itoa(clusterLabels[i]) // DBSCAN cluster ID
+			} else {
+				cn = "Noise" // DBSCAN labelled as noise
 			}
-		} else {
-			cluster = i % 5
+			scenes = append(scenes, sceneResult{
+				TimeOffset: int(startTime + 0.5),
+				ClusterNum: cn,
+				ClipURL:    fmt.Sprintf("http://127.0.0.1:%d/clip/%s_%04d.mp4", port, fileBase, i),
+			})
 		}
-		result = append(result, clusterItem{
-			TimeOffset: int(t + 0.5),
-			ClusterNum: strconv.Itoa(cluster),
-		})
 	}
 
-	if len(result) == 0 {
-		result = []clusterItem{{TimeOffset: 0, ClusterNum: "0"}}
+	if len(scenes) == 0 {
+		scenes = []sceneResult{{TimeOffset: 0, ClusterNum: "0", ClipURL: ""}}
 	}
 
-	data, _ := json.Marshal(result)
+	a.emitProgress(55, "Generating thumbnails...")
+
+	// Generate thumbnails using existing GenerateThumbnails logic
+	go func() {
+		offsets := make([]int, len(scenes))
+		for i, s := range scenes {
+			offsets[i] = s.TimeOffset
+		}
+		a.GenerateThumbnails(videoPath, offsets) // this emits progress 40-100%
+	}()
+
+	data, _ := json.Marshal(scenes)
 	return string(data), nil
 }
 
@@ -536,6 +703,100 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// getFrameColor extracts average R/G/B from a single frame via 1×1 ffmpeg pixel.
+func getFrameColor(videoPath string, timeSec int) (float64, float64, float64, error) {
+	cmd := exec.Command("ffmpeg",
+		"-hide_banner", "-loglevel", "error",
+		"-ss", strconv.Itoa(timeSec),
+		"-i", videoPath,
+		"-frames:v", "1",
+		"-vf", "scale=1:1",
+		"-f", "rawvideo", "-pix_fmt", "rgb24",
+		"-",
+	)
+	out, err := cmd.Output()
+	if err != nil || len(out) < 3 {
+		return 128, 128, 128, fmt.Errorf("no pixel data")
+	}
+	r := float64(out[0])
+	g := float64(out[1])
+	b := float64(out[2])
+	return r, g, b, nil
+}
+
+func isBlackOrWhite(r, g, b float64) (bool, string) {
+	if r < 25 && g < 25 && b < 25 {
+		return true, "black"
+	}
+	if r > 230 && g > 230 && b > 230 {
+		return true, "white"
+	}
+	return false, ""
+}
+
+// dbscanLabels runs DBSCAN on a 3D float64 slice. eps=radius, minPts=neighbour threshold.
+// Returns cluster labels (-1 = noise).
+func dbscanLabels(points [][]float64, eps float64, minPts int) []int {
+	n := len(points)
+	labels := make([]int, n)
+	for i := range labels {
+		labels[i] = -1 // unvisited
+	}
+
+	euclid := func(a, b []float64) float64 {
+		var s float64
+		for i := 0; i < len(a); i++ {
+			d := a[i] - b[i]
+			s += d * d
+		}
+		return s // squared distance (compare against eps²)
+	}
+
+	eps2 := eps * eps
+	var findNeighbours func(idx int) []int
+	findNeighbours = func(idx int) []int {
+		var nb []int
+		for j := 0; j < n; j++ {
+			if euclid(points[idx], points[j]) <= eps2 {
+				nb = append(nb, j)
+			}
+		}
+		return nb
+	}
+
+	clusterID := 0
+	for i := 0; i < n; i++ {
+		if labels[i] >= 0 {
+			continue
+		}
+		neighbours := findNeighbours(i)
+		if len(neighbours) < minPts {
+			labels[i] = 0 // noise
+			continue
+		}
+		clusterID++
+		labels[i] = clusterID
+		seedSet := neighbours
+		for _, s := range seedSet {
+			if labels[s] == 0 {
+				labels[s] = clusterID
+				// expand
+				nb2 := findNeighbours(s)
+				if len(nb2) >= minPts {
+					seedSet = append(seedSet, nb2...)
+				}
+			} else if labels[s] < 0 {
+				labels[s] = clusterID
+				nb2 := findNeighbours(s)
+				if len(nb2) >= minPts {
+					seedSet = append(seedSet, nb2...)
+				}
+			}
+		}
+	}
+	return labels
 }
 
 // ExportTimeline builds an MP4 quickly via stream-copy segment extract + concat.

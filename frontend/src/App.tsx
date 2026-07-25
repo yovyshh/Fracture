@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { TitleBar } from './components/TitleBar';
 import { Sidebar, type PageType } from './components/Sidebar';
-import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, ExternalLink, Github, Heart, Coffee } from 'lucide-react';
+import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, ExternalLink, Github, Heart, Coffee, Minus, Maximize, X, SlidersHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails, OpenConfigFolder } from "../wailsjs/go/main/App";
+import { WindowMinimise, WindowToggleMaximise, Quit, EventsOn } from "../wailsjs/runtime/runtime";
 
-type ClipData = { id: string, timeOffset: number, clusterNum: string | number, thumbUrl?: string };
+type ClipData = { id: string, timeOffset: number, clusterNum: string | number, thumbUrl?: string, clipUrl?: string };
 
 type ExportRecord = {
   videoName: string;
@@ -54,26 +54,15 @@ const formatTime = (seconds: number) => {
   return `${m}:${s}`;
 };
 
-/** Scene tile: JPEG thumb + hover plays short preview via main player */
-function MediaClip({ thumbUrl, timeOffset, clusterNum, videoUrl, onClick, onPreview }: {
+/** Scene tile: JPEG thumb + hover triggers main-player preview */
+function MediaClip({ thumbUrl, timeOffset, clusterNum, onClick, onPreview }: {
   thumbUrl?: string;
   timeOffset: number;
   clusterNum: string | number;
-  videoUrl?: string;
   onClick: () => void;
   onPreview?: (t: number) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (isHovered && videoRef.current) {
-      videoRef.current.currentTime = timeOffset;
-      videoRef.current.play().catch(() => {});
-    } else if (!isHovered && videoRef.current) {
-      videoRef.current.pause();
-    }
-  }, [isHovered, timeOffset]);
 
   return (
     <div
@@ -87,19 +76,21 @@ function MediaClip({ thumbUrl, timeOffset, clusterNum, videoUrl, onClick, onPrev
       className="group relative aspect-video bg-card border border-border rounded-lg overflow-hidden hover:border-primary cursor-pointer hover:shadow-lg hover:shadow-primary/20 transition-all hover:scale-[1.03]"
     >
       <div className="absolute inset-0 bg-black">
-        {isHovered && videoUrl && (
-          <video ref={videoRef} src={videoUrl} muted autoPlay
-            onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = timeOffset; }}
-            className="absolute inset-0 w-full h-full object-cover z-20"
-          />
-        )}
         {thumbUrl ? (
           <img src={thumbUrl} alt={`Scene ${formatTime(timeOffset)}`}
-            className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-10 transition-opacity z-10"
+            className={`absolute inset-0 w-full h-full object-cover transition-all z-10 ${isHovered ? 'opacity-20 scale-105' : 'opacity-90'}`}
             loading="lazy" draggable={false}
           />
         ) : (
           <div className="absolute inset-0 bg-muted/40 animate-pulse z-10" />
+        )}
+        {isHovered && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center gap-1.5">
+            <div className="w-6 h-6 rounded-full bg-primary/90 flex items-center justify-center animate-pulse">
+              <span className="text-white text-[10px] font-bold">▶</span>
+            </div>
+            <span className="text-[10px] font-mono font-bold text-white bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">preview</span>
+          </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-30" />
       </div>
@@ -112,9 +103,6 @@ function MediaClip({ thumbUrl, timeOffset, clusterNum, videoUrl, onClick, onPrev
         <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded backdrop-blur-md bg-black/60 text-white shadow-sm border border-white/10">
           {formatTime(timeOffset)}
         </span>
-      </div>
-      <div className="absolute bottom-1 left-1 z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-primary/90 text-white">▶ preview</span>
       </div>
     </div>
   );
@@ -131,7 +119,25 @@ export default function App() {
   const [curatedClips, setCuratedClips] = useState<ClipData[]>([]);
   const [scenes, setScenes] = useState<ClipData[]>([]);
   const [historyRecords, setHistoryRecords] = useState<ExportRecord[]>([]);
-  const mainVideoRef = useRef<HTMLVideoElement>(null);
+  const [selectedClip, setSelectedClip] = useState<ClipData | null>(null);
+  const [showPreviewPanel, setShowPreviewPanel] = useState(true);
+  const previewClipRef = useRef<HTMLVideoElement>(null);
+
+  // Import progress
+  const [importProgress, setImportProgress] = useState<{ pct: number; stage: string } | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+
+  useEffect(() => {
+    return EventsOn("import-progress", (d: any) => {
+      const p = typeof d === "string" ? JSON.parse(d) : d;
+      const pct = p.pct ?? 0;
+      setImportProgress(p);
+      setShowProgress(pct < 100);
+      if (pct >= 100) {
+        setTimeout(() => { setShowProgress(false); setImportProgress(null); }, 600);
+      }
+    });
+  }, []);
 
   // Theme state
   const [savedTheme, setSavedTheme] = useState<ThemeId>(getStoredTheme);
@@ -176,6 +182,8 @@ export default function App() {
       const path = await SelectVideo();
       if (!path) return;
       setIsProcessing(true);
+      setShowProgress(true);
+      setImportProgress({ pct: 0, stage: "Loading video..." });
 
       // 1) Start video stream — instant
       const streamUrl = await ServeVideo(path);
@@ -184,34 +192,44 @@ export default function App() {
       setScenes([]);
       setCuratedClips([]);
       setActiveCluster("All");
+      setImportProgress({ pct: 5, stage: "Video loaded" });
 
       // 2) Fast keyframe scene detect
+      setImportProgress({ pct: 10, stage: "Detecting scenes..." });
+      let detectedScenes: ClipData[] = [];
       try {
         const scenesJson = await GetSceneClusters(path);
-        const detectedScenes: ClipData[] = JSON.parse(scenesJson).map((s: any) => ({
+        detectedScenes = JSON.parse(scenesJson).map((s: any) => ({
           id: Math.random().toString(36).substring(2, 9),
           timeOffset: s.timeOffset,
           clusterNum: s.clusterNum,
+          clipUrl: s.clipUrl,
         }));
-        setScenes(detectedScenes.length ? detectedScenes : Array.from({length:24},(_,i)=>({id:Math.random().toString(36).substring(2,9),timeOffset:i*5,clusterNum:String(i%3)})));
-        setIsProcessing(false);
-        toast.success(`${detectedScenes.length || 24} scenes ready`);
       } catch {
-        // fallback even if scene detect fails
-        setIsProcessing(false);
-        setScenes(Array.from({length:24},(_,i)=>({id:Math.random().toString(36).substring(2,9),timeOffset:i*5,clusterNum:String(i%3)})));
+        detectedScenes = [];
       }
+      if (detectedScenes.length === 0) {
+        detectedScenes = Array.from({length:24},(_,i)=>({id:Math.random().toString(36).substring(2,9),timeOffset:i*5,clusterNum:String(i%3)}));
+      }
+      setScenes(detectedScenes);
+      setImportProgress({ pct: 35, stage: `${detectedScenes.length} scenes detected` });
 
-      // Background JPEG thumbs
-      GenerateThumbnails(path, []).then((thumbsJson) => {
-        try {
-          const thumbs: { timeOffset: number; url: string }[] = JSON.parse(thumbsJson);
-          const byOffset = new Map(thumbs.map(t => [t.timeOffset, t.url]));
-          setScenes(prev => prev.map(s => ({ ...s, thumbUrl: byOffset.get(s.timeOffset) || s.thumbUrl })));
-        } catch { /* thumbs optional */ }
-      }).catch(() => {});
+      // 3) Generate thumbnails — backend emits 40%→100% events
+      setImportProgress({ pct: 38, stage: "Generating thumbnails..." });
+      const offsets = detectedScenes.map(s => s.timeOffset);
+      try {
+        const thumbsJson = await GenerateThumbnails(path, offsets);
+        const thumbs: { timeOffset: number; url: string }[] = JSON.parse(thumbsJson);
+        const byOffset = new Map(thumbs.map(t => [t.timeOffset, t.url]));
+        setScenes(prev => prev.map(s => ({ ...s, thumbUrl: byOffset.get(s.timeOffset) || s.thumbUrl })));
+      } catch { /* thumbs optional */ }
+
+      setIsProcessing(false);
+      toast.success(`Import complete — ${detectedScenes.length} scenes`);
     } catch (err: any) {
       setIsProcessing(false);
+      setShowProgress(false);
+      setImportProgress(null);
       toast.error(`Import failed: ${err.message || err}`);
     }
   };
@@ -226,13 +244,26 @@ export default function App() {
   };
 
   const seekMainPreview = (t: number) => {
-    const v = mainVideoRef.current;
+    const v = previewClipRef.current;
     if (!v) return;
     const go = () => {
-      try { v.currentTime = Math.max(0, t); v.muted = false; v.play().catch(() => {}); } catch { /* ignore */ }
+      try { v.currentTime = Math.max(0, t); v.muted = true; v.play().catch(() => {}); } catch { /* ignore */ }
     };
     if (v.readyState >= 1) go();
     else v.addEventListener('loadedmetadata', go as EventListener, { once: true });
+  };
+
+  const handleClipSelect = (clip: ClipData) => {
+    setSelectedClip(clip);
+    // make sure preview is visible
+    setShowPreviewPanel(true);
+    // after render, seek preview to this clip
+    setTimeout(() => {
+      const v = previewClipRef.current;
+      if (!v) return;
+      v.currentTime = Math.max(0, clip.timeOffset);
+      v.play().catch(() => {});
+    }, 50);
   };
 
   const handleAddToTimeline = (timeOffset: number, clusterNum: string | number, thumbUrl?: string) => {
@@ -252,6 +283,10 @@ export default function App() {
     setSettings(savedSettings);
     toast.error("You did not save changes");
   };
+
+  const handleMinimize = () => WindowMinimise();
+  const handleMaximize = () => WindowToggleMaximise();
+  const handleClose = () => Quit();
 
   const handlePageChange = (page: PageType) => {
     if (currentPage === "settings" && page !== "settings" && unsavedChanges) {
@@ -384,16 +419,57 @@ export default function App() {
             </div>
           </div>
 
-          {/* Video preview */}
-          {videoUrl && (
-            <div className="shrink-0 bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <video ref={mainVideoRef} key={videoUrl} src={videoUrl} controls preload="metadata" className="w-full max-h-56 bg-black object-contain" />
+          {/* Preview panel (toggleable) */}
+          {videoUrl && showPreviewPanel && (
+            <div className="shrink-0 bg-card border border-border rounded-xl overflow-hidden shadow-sm relative group">
+              <video ref={previewClipRef} key={selectedClip?.clipUrl || videoUrl} src={selectedClip?.clipUrl || videoUrl}
+                className="w-full max-h-40 bg-black object-contain"
+                muted autoPlay preload="auto"
+                onLoadedMetadata={() => {
+                  if (selectedClip && previewClipRef.current) {
+                    previewClipRef.current.currentTime = selectedClip.timeOffset;
+                  }
+                }}
+              />
+              <button onClick={() => setShowPreviewPanel(false)}
+                className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded flex items-center justify-center text-white text-[10px] hover:bg-black/80 transition-colors opacity-0 group-hover:opacity-100 z-10"
+              >✕</button>
+              {selectedClip && (
+                <div className="absolute bottom-1 left-1 z-10">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-black/70 text-white">
+                    Clip {formatTime(selectedClip.timeOffset)}
+                  </span>
+                </div>
+              )}
             </div>
+          )}
+          {videoUrl && !showPreviewPanel && (
+            <button onClick={() => setShowPreviewPanel(true)}
+              className="shrink-0 w-full py-2 bg-card border border-border rounded-xl flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ▶ Show Preview
+            </button>
           )}
 
           {/* Scene grid */}
           <div className="flex-1 bg-background border border-border rounded-xl overflow-y-auto p-4 shadow-inner relative">
-            {isProcessing ? (
+            {showProgress && importProgress ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background/90 backdrop-blur-sm z-10">
+                <div className="flex flex-col items-center gap-4 max-w-sm w-full px-8">
+                  {/* Progress bar */}
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-primary to-purple-400 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${importProgress.pct}%` }}
+                    />
+                  </div>
+                  {/* Percentage */}
+                  <span className="text-3xl font-bold font-mono tabular-nums text-primary">{importProgress.pct}%</span>
+                  {/* Stage text */}
+                  <p className="font-mono text-sm text-muted-foreground animate-pulse">{importProgress.stage}</p>
+                </div>
+              </div>
+            ) : isProcessing ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm z-10">
                 <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
                 <p className="font-mono text-sm text-primary animate-pulse">Detecting keyframes…</p>
@@ -404,9 +480,12 @@ export default function App() {
                   if (activeCluster !== "All" && activeCluster !== String(scene.clusterNum)) return null;
                   return (
                     <MediaClip key={scene.id} thumbUrl={scene.thumbUrl} timeOffset={scene.timeOffset}
-                      clusterNum={scene.clusterNum} videoUrl={videoUrl || undefined}
+                      clusterNum={scene.clusterNum}
                       onPreview={seekMainPreview}
-                      onClick={() => handleAddToTimeline(scene.timeOffset, scene.clusterNum, scene.thumbUrl)}
+                      onClick={() => {
+                        handleClipSelect(scene);
+                        handleAddToTimeline(scene.timeOffset, scene.clusterNum, scene.thumbUrl);
+                      }}
                     />
                   );
                 })}
@@ -904,13 +983,51 @@ export default function App() {
     </div>
   );
 
+  const renderWindowControls = () => (
+    <div
+      className="absolute top-3 right-3 z-20 flex items-center gap-0.5 opacity-40 hover:opacity-100 transition-opacity duration-300"
+      style={{ "--wails-draggable": "no-drag" } as React.CSSProperties}
+    >
+      <button
+        onClick={() => setCurrentPage("settings")}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+        aria-label="Open settings"
+      >
+        <SlidersHorizontal className="w-3 h-3" />
+      </button>
+      <button
+        onClick={handleMinimize}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+        aria-label="Minimize"
+      >
+        <Minus className="w-3 h-3" />
+      </button>
+      <button
+        onClick={handleMaximize}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+        aria-label="Maximize"
+      >
+        <Maximize className="w-3 h-3" />
+      </button>
+      <button
+        onClick={handleClose}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/60 hover:bg-destructive/80 hover:text-white transition-colors"
+        aria-label="Close"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+
   // ════════════ ROOT ════════════
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <TitleBar />
       <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
-      <main className="flex-1 min-w-0 mt-10 relative overflow-hidden bg-background">
-        <div className="h-full overflow-y-auto px-10 py-8 flex flex-col max-w-[1400px] mx-auto">
+      <main className="flex-1 min-w-0 relative overflow-hidden bg-background">
+        {/* Invisible draggable strip for frameless window */}
+        <div className="absolute top-0 left-0 right-0 h-8 z-10" style={{ "--wails-draggable": "drag" } as React.CSSProperties} onDoubleClick={handleMaximize} />
+        {renderWindowControls()}
+        <div className="h-full overflow-y-auto px-10 py-6 flex flex-col max-w-[1400px] mx-auto">
           {currentPage === "main" && renderHome()}
           {currentPage === "history" && renderHistory()}
           {currentPage === "settings" && renderSettings()}

@@ -54,8 +54,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     ] as const;
 
     return (
-        <div className="shrink-0 w-[64px] h-full bg-background border-r border-border flex flex-col items-center py-14 z-30">
-            <div className="flex flex-col gap-4 flex-1 mt-4">
+        <div className="shrink-0 w-[64px] h-full bg-background border-r border-border flex flex-col items-center py-6 z-30">
+            <div className="flex flex-col gap-4 flex-1 mt-2">
                 {topNav.map((item) => {
                     const IconComp = item.component as any;
                     const isActive = currentPage === item.id;
