@@ -782,6 +782,25 @@ func getHistoryPath() string {
 	return filepath.Join(home, "AppData", "Local", "fracture", "export_history.json")
 }
 
+func getConfigDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "AppData", "Local", "fracture")
+}
+
+// OpenConfigFolder opens the Fracture local app-data folder in Explorer.
+func (a *App) OpenConfigFolder() (string, error) {
+	configDir := getConfigDir()
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return "", err
+	}
+
+	if err := exec.Command("explorer.exe", configDir).Start(); err != nil {
+		return "", err
+	}
+
+	return configDir, nil
+}
+
 func loadHistory() ([]ExportRecord, error) {
 	historyPath := getHistoryPath()
 	data, err := os.ReadFile(historyPath)

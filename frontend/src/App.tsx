@@ -3,7 +3,7 @@ import { TitleBar } from './components/TitleBar';
 import { Sidebar, type PageType } from './components/Sidebar';
 import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, ExternalLink, Github, Heart, Coffee } from 'lucide-react';
 import { toast } from 'sonner';
-import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails } from "../wailsjs/go/main/App";
+import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails, OpenConfigFolder } from "../wailsjs/go/main/App";
 
 type ClipData = { id: string, timeOffset: number, clusterNum: string | number, thumbUrl?: string };
 
@@ -30,12 +30,21 @@ const THEMES: { id: ThemeId; name: string; icon: typeof Sun; desc: string }[] = 
 function applyTheme(theme: ThemeId) {
   document.documentElement.classList.remove("theme-moonlight", "theme-amethyst", "theme-frost", "theme-ember");
   document.documentElement.classList.add(`theme-${theme}`);
-  localStorage.setItem("fracture-theme", theme);
 }
 
 function getStoredTheme(): ThemeId {
   if (typeof window === "undefined") return "moonlight";
   return (localStorage.getItem("fracture-theme") as ThemeId) || "moonlight";
+}
+
+function getStoredFont(): string {
+  if (typeof window === "undefined") return "JetBrains Mono";
+  return localStorage.getItem("fracture-font") || "JetBrains Mono";
+}
+
+function getStoredSettings(): Record<string, any> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem("fracture-settings") || "{}"); } catch { return {}; }
 }
 
 // ── helpers ──
@@ -125,16 +134,18 @@ export default function App() {
   const mainVideoRef = useRef<HTMLVideoElement>(null);
 
   // Theme state
+  const [savedTheme, setSavedTheme] = useState<ThemeId>(getStoredTheme);
+  const [savedFontFamily, setSavedFontFamily] = useState<string>(getStoredFont);
+  const [savedSettings, setSavedSettings] = useState<Record<string, any>>(getStoredSettings);
   const [theme, setTheme] = useState<ThemeId>(getStoredTheme);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
-  const [fontFamily, setFontFamily] = useState<string>(() => localStorage.getItem("fracture-font") || "JetBrains Mono");
+  const [fontFamily, setFontFamily] = useState<string>(getStoredFont);
 
   // Settings state (persisted)
-  const [settings, setSettings] = useState<Record<string, any>>(() => {
-    try { return JSON.parse(localStorage.getItem("fracture-settings") || "{}"); } catch { return {}; }
-  });
+  const [settings, setSettings] = useState<Record<string, any>>(getStoredSettings);
   const set = (key: string, value: any) => setSettings(prev => ({ ...prev, [key]: value }));
   const s = (key: string, fallback: any) => settings[key] ?? fallback;
+  const unsavedChanges = theme !== savedTheme || fontFamily !== savedFontFamily || JSON.stringify(settings) !== JSON.stringify(savedSettings);
 
   // Applies theme + font on mount + toggle
   useEffect(() => { applyTheme(theme); }, [theme]);
@@ -148,7 +159,6 @@ export default function App() {
     const css = stack[fontFamily] || stack["JetBrains Mono"];
     document.documentElement.style.setProperty("--font-sans", css);
     document.documentElement.style.setProperty("--font-mono", css);
-    localStorage.setItem("fracture-font", fontFamily);
   }, [fontFamily]);
 
   // ── History ──
@@ -236,7 +246,17 @@ export default function App() {
 
   const handleClearTimeline = () => { setCuratedClips([]); };
 
+  const handleDiscardSettings = () => {
+    setTheme(savedTheme);
+    setFontFamily(savedFontFamily);
+    setSettings(savedSettings);
+    toast.error("You did not save changes");
+  };
+
   const handlePageChange = (page: PageType) => {
+    if (currentPage === "settings" && page !== "settings" && unsavedChanges) {
+      handleDiscardSettings();
+    }
     setCurrentPage(page);
     if (page === "history") loadHistory();
   };
@@ -245,17 +265,26 @@ export default function App() {
   const handleSaveSettings = () => {
     const all = { ...settings, fontFamily, theme };
     localStorage.setItem("fracture-settings", JSON.stringify(all));
+    localStorage.setItem("fracture-theme", theme);
     localStorage.setItem("fracture-font", fontFamily);
+    setSavedTheme(theme);
+    setSavedFontFamily(fontFamily);
+    setSavedSettings(settings);
     toast.success("Settings saved");
   };
   const handleResetSettings = () => {
-    localStorage.removeItem("fracture-settings");
-    localStorage.removeItem("fracture-theme");
-    localStorage.removeItem("fracture-font");
     setTheme("moonlight");
     setFontFamily("JetBrains Mono");
     setSettings({});
-    toast.success("Settings reset to defaults");
+    toast.success("Defaults loaded — click Save Changes to keep them");
+  };
+  const handleOpenConfig = async () => {
+    try {
+      const path = await OpenConfigFolder();
+      toast.success(`Opened config: ${path}`);
+    } catch (err: any) {
+      toast.error(`Couldn't open config: ${err?.message || err}`);
+    }
   };
 
   // ── Export ──
@@ -506,7 +535,7 @@ export default function App() {
         <div className="flex items-center justify-between">
           <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
           <div className="flex items-center gap-3">
-            <button className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
+            <button onClick={handleOpenConfig} className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium">
               <FolderOpen className="w-4 h-4" /> Open Config
             </button>
             <button onClick={handleResetSettings} className="h-9 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium text-destructive hover:text-destructive hover:border-destructive/30">
