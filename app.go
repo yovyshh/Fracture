@@ -474,56 +474,9 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	a.emitProgress(30, "Splitting scenes...")
 
 	// Cut points: skip first (0.0), use remaining as scene boundaries
-	cutPoints := times[1:]
-
-	// Create clip temp dir and clean old one
-	clipDir, err := os.MkdirTemp("", "fracture-clips-*")
-	if err != nil {
-		return "[]", err
-	}
-
-	a.serverMu.Lock()
-	if a.clipDir != "" {
-		os.RemoveAll(a.clipDir)
-	}
-	a.clipDir = clipDir
-	port := a.serverPort
-	a.serverMu.Unlock()
-
-	// ffmpeg segment muxer - split into individual scene files
-	fileBase := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	segFileBase := strings.ReplaceAll(fileBase, "%", "%%")
-	outputPattern := filepath.Join(clipDir, segFileBase+"_%04d.mp4")
-
-	segmentArgs := []string{
-		"-y",
-		"-i", videoPath,
-		"-map", "0:v:0",
-		"-map", "0:a?",
-		"-c:v", "copy",
-		"-c:a", "aac",
-		"-b:a", "160k",
-		"-ac", "2",
-		"-ar", "48000",
-		"-f", "segment",
-	}
-	if len(cutPoints) > 0 {
-		cutStrs := make([]string, len(cutPoints))
-		for i, c := range cutPoints {
-			cutStrs[i] = strconv.FormatFloat(c, 'f', 6, 64)
-		}
-		segmentArgs = append(segmentArgs, "-segment_times", strings.Join(cutStrs, ","))
-	}
-	segmentArgs = append(segmentArgs, "-reset_timestamps", "1", outputPattern)
-
-	cmd := newCmd(findFFmpeg(), segmentArgs...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "[]", fmt.Errorf("ffmpeg segment failed: %s: %s", err, string(out))
-	}
-
 	a.emitProgress(50, "Collecting scenes...")
 
-	// Collect created scene files
+	// Collect scenes (no file splitting — frontend seeks in main video)
 	type sceneResult struct {
 		TimeOffset int    `json:"timeOffset"`
 		ClusterNum string `json:"clusterNum"`
@@ -532,23 +485,20 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	scenes := make([]sceneResult, 0, len(times))
 
 	for i, startTime := range times {
-		sceneFile := filepath.Join(clipDir, fmt.Sprintf(fileBase+"_%04d.mp4", i))
-		if _, err := os.Stat(sceneFile); err == nil {
-			cn := "0"
-			fc := frameColors[i]
-			if fc.isNoise {
-				cn = "Noise" // black or white frame
-			} else if clusterLabels[i] > 0 {
-				cn = strconv.Itoa(clusterLabels[i]) // DBSCAN cluster ID
-			} else {
-				cn = "Noise" // DBSCAN labelled as noise
-			}
-			scenes = append(scenes, sceneResult{
-				TimeOffset: int(startTime + 0.5),
-				ClusterNum: cn,
-				ClipURL:    fmt.Sprintf("http://127.0.0.1:%d/clip/%s_%04d.mp4", port, fileBase, i),
-			})
+		cn := "0"
+		fc := frameColors[i]
+		if fc.isNoise {
+			cn = "Noise" // black or white frame
+		} else if clusterLabels[i] > 0 {
+			cn = strconv.Itoa(clusterLabels[i]) // DBSCAN cluster ID
+		} else {
+			cn = "Noise" // DBSCAN labelled as noise
 		}
+		scenes = append(scenes, sceneResult{
+			TimeOffset: int(startTime + 0.5),
+			ClusterNum: cn,
+			ClipURL:    "", // empty — frontend uses main video URL with seek
+		})
 	}
 
 	if len(scenes) == 0 {
