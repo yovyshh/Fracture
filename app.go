@@ -320,7 +320,7 @@ func (a *App) GenerateThumbnails(videoPath string, timeOffsets []int) (string, e
 			name := fmt.Sprintf("t_%d.jpg", off)
 			outPath := filepath.Join(dir, name)
 			// -ss before -i = fast keyframe seek; small scale for grid
-			cmd := exec.Command("ffmpeg",
+			cmd := exec.Command(findFFmpeg(),
 				"-hide_banner", "-loglevel", "error",
 				"-ss", strconv.Itoa(off),
 				"-i", videoPath,
@@ -495,7 +495,7 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	}
 	segmentArgs = append(segmentArgs, "-reset_timestamps", "1", outputPattern)
 
-	cmd := exec.Command("ffmpeg", segmentArgs...)
+	cmd := exec.Command(findFFmpeg(), segmentArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "[]", fmt.Errorf("ffmpeg segment failed: %s: %s", err, string(out))
 	}
@@ -540,7 +540,7 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 
 // probeDuration returns seconds via ffprobe (fast, no decode).
 func probeDuration(videoPath string) float64 {
-	cmd := exec.Command("ffprobe",
+	cmd := exec.Command(findFFprobe(),
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
@@ -560,7 +560,7 @@ func probeDuration(videoPath string) float64 {
 
 // probeKeyframeTimes reads packet flags only — no video decode (AMVerge packet path).
 func probeKeyframeTimes(videoPath string) []float64 {
-	cmd := exec.Command("ffprobe",
+	cmd := exec.Command(findFFprobe(),
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "packet=pts_time,flags",
@@ -699,7 +699,7 @@ func abs(x int) int {
 
 // getFrameColor extracts average R/G/B from a single frame via 1×1 ffmpeg pixel.
 func getFrameColor(videoPath string, timeSec int) (float64, float64, float64, error) {
-	cmd := exec.Command("ffmpeg",
+	cmd := exec.Command(findFFmpeg(),
 		"-hide_banner", "-loglevel", "error",
 		"-ss", strconv.Itoa(timeSec),
 		"-i", videoPath,
@@ -856,7 +856,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 
 			out := filepath.Join(workDir, fmt.Sprintf("clip_%04d.mp4", i))
 			// -ss before -i for fast seek; stream copy = no reencode
-			cmd := exec.Command("ffmpeg",
+			cmd := exec.Command(findFFmpeg(),
 				"-hide_banner", "-loglevel", "error",
 				"-y",
 				"-ss", strconv.Itoa(seg.start),
@@ -870,7 +870,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 			)
 			if o, err := cmd.CombinedOutput(); err != nil {
 				// Fallback: light reencode if copy fails (codec/container edge cases)
-				cmd2 := exec.Command("ffmpeg",
+				cmd2 := exec.Command(findFFmpeg(),
 					"-hide_banner", "-loglevel", "error",
 					"-y",
 					"-ss", strconv.Itoa(seg.start),
@@ -925,7 +925,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 	}
 
 	if len(ordered) == 1 {
-		cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		cmd := exec.Command(findFFmpeg(), "-hide_banner", "-loglevel", "error",
 			"-y", "-i", ordered[0], "-c", "copy", "-movflags", "+faststart", outputPath)
 		if o, err := cmd.CombinedOutput(); err != nil {
 			// plain file copy fallback
@@ -953,7 +953,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 		return "", err
 	}
 
-	concatCmd := exec.Command("ffmpeg",
+	concatCmd := exec.Command(findFFmpeg(),
 		"-hide_banner", "-loglevel", "error",
 		"-y",
 		"-f", "concat",
@@ -983,7 +983,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 			"-movflags", "+faststart",
 			outputPath,
 		)
-		cmd2 := exec.Command("ffmpeg", args...)
+		cmd2 := exec.Command(findFFmpeg(), args...)
 		if o2, err2 := cmd2.CombinedOutput(); err2 != nil {
 			return "", fmt.Errorf("concat failed: %v / %v\n%s\n%s", err, err2, o, o2)
 		}
@@ -1084,6 +1084,54 @@ func (a *App) emitDownloadProgress(pct int, speed, eta, size, stage string) {
 	})
 }
 
+
+// findFFmpeg resolves ffmpeg binary: PATH, app install dir, then common paths.
+func findFFmpeg() string {
+	if p, err := exec.LookPath("ffmpeg"); err == nil {
+		return p
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidate := filepath.Join(dir, "ffmpeg.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	candidates := []string{
+		"C:fmpeginfmpeg.exe",
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Fracture", "ffmpeg.exe"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "ffmpeg"
+}
+
+// findFFprobe resolves ffprobe binary using the same strategy as findFFmpeg.
+func findFFprobe() string {
+	if p, err := exec.LookPath("ffprobe"); err == nil {
+		return p
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidate := filepath.Join(dir, "ffprobe.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	candidates := []string{
+		"C:fmpeginfprobe.exe",
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Fracture", "ffprobe.exe"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "ffprobe"
+}
 func findYTDLP() string {
 	if p, err := exec.LookPath("yt-dlp"); err == nil {
 		return p
