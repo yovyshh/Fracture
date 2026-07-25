@@ -25,14 +25,20 @@ import (
 // newCmd creates an exec.Cmd with hidden console window (no cmd popup).
 func newCmd(name string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 	return cmd
 }
 
 // newCmdContext creates a context-aware exec.Cmd with hidden console window.
 func newCmdContext(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 	return cmd
 }
 

@@ -180,6 +180,12 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
+  ; Clear WebView2 user data (export history, localStorage, settings)
+  RMDir /r "$LOCALAPPDATA\Fracture"
+  RMDir /r "$LOCALAPPDATA\fracture"
+  RMDir /r "$APPDATA\Fracture"
+  RMDir /r "$APPDATA\fracture"
+
   ; Remove Fracture from PATH
   ReadRegStr $0 HKCU "Environment" "PATH"
   ${If} $0 != ""
