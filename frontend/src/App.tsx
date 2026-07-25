@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Sidebar, type PageType } from './components/Sidebar';
 import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, ExternalLink, Github, Heart, Coffee, Minus, Maximize, X, SlidersHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
-import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails, OpenConfigFolder } from "../wailsjs/go/main/App";
+import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails, OpenConfigFolder, GetVideoFormats, DownloadVideo } from "../wailsjs/go/main/App";
 import { WindowMinimise, WindowToggleMaximise, Quit, EventsOn } from "../wailsjs/runtime/runtime";
 
 type ClipData = { id: string, timeOffset: number, clusterNum: string | number, thumbUrl?: string, clipUrl?: string };
@@ -138,6 +138,109 @@ export default function App() {
       }
     });
   }, []);
+
+  // Download state
+  const [dlURL, setDlURL] = useState("");
+  const [dlInfo, setDlInfo] = useState<{ title: string; url: string; formats: any[] } | null>(null);
+  const [dlFormat, setDlFormat] = useState("");
+  const [dlProgress, setDlProgress] = useState<{ pct: number; speed: string; eta: string; size: string; stage: string } | null>(null);
+  const [dlLoading, setDlLoading] = useState(false);
+
+  useEffect(() => {
+    return EventsOn("download-progress", (d: any) => {
+      const p = typeof d === "string" ? JSON.parse(d) : d;
+      setDlProgress(p);
+      if (p.pct >= 100) {
+        setTimeout(() => setDlProgress(null), 2000);
+      }
+    });
+  }, []);
+
+  const handleFetchFormats = async () => {
+    if (!dlURL.trim()) { toast.error("Enter a URL"); return; }
+    setDlLoading(true);
+    setDlInfo(null);
+    setDlFormat("");
+    try {
+      const json = await GetVideoFormats(dlURL.trim());
+      const info = JSON.parse(json);
+      if (!info.formats || info.formats.length === 0) { toast.error("No formats found"); setDlLoading(false); return; }
+      setDlInfo(info);
+      setDlFormat(info.formats[0].id);
+      toast.success(`${info.formats.length} formats available`);
+    } catch (err: any) { toast.error(`Failed: ${err.message || err}`); }
+    setDlLoading(false);
+  };
+
+  const handleDownload = async (destType: string) => {
+    if (!dlInfo || !dlFormat) { toast.error("Select a format first"); return; }
+    setDlProgress({ pct: 0, speed: "", eta: "", size: "", stage: "Starting..." });
+    try {
+      const path = await DownloadVideo(dlInfo.url, dlFormat, destType);
+      if (!path) { toast.error("Download failed — no file"); setDlProgress(null); return; }
+      setDlProgress(null);
+      // Clear download form
+      setDlURL("");
+      setDlInfo(null);
+      setDlFormat("");
+      if (destType === "import") {
+        toast.success("Download complete — importing...");
+        setCurrentPage("main");
+        setShowPreviewPanel(true);
+        // Auto-import: serve video, detect scenes, generate thumbnails
+        setShowProgress(true);
+        setImportProgress({ pct: 0, stage: "Loading downloaded video..." });
+        setIsProcessing(true);
+        setScenes([]);
+        setCuratedClips([]);
+        const streamUrl = await ServeVideo(path);
+        setVideoUrl(streamUrl);
+        setVideoPath(path);
+        setActiveCluster("All");
+        setImportProgress({ pct: 20, stage: "Detecting scenes..." });
+        try {
+          const scenesJson = await GetSceneClusters(path);
+          const detected: ClipData[] = JSON.parse(scenesJson).map((s: any) => ({
+            id: Math.random().toString(36).substring(2, 9),
+            timeOffset: s.timeOffset,
+            clusterNum: s.clusterNum,
+            clipUrl: s.clipUrl,
+          }));
+          setScenes(detected.length ? detected : []);
+          if (detected.length > 0) {
+            handleClipSelect(detected[0]);
+            setImportProgress({ pct: 40, stage: `${detected.length} scenes — generating thumbs...` });
+            const offsets = detected.map(s => s.timeOffset);
+            GenerateThumbnails(path, offsets).then((json) => {
+              try {
+                const thumbs: { timeOffset: number; url: string }[] = JSON.parse(json);
+                const byOffset = new Map(thumbs.map((t: any) => [t.timeOffset, t.url]));
+                setScenes(prev => prev.map(s => ({ ...s, thumbUrl: byOffset.get(s.timeOffset) || s.thumbUrl })));
+              } catch {}
+              setIsProcessing(false);
+              setShowProgress(false);
+              setImportProgress(null);
+              toast.success(`${detected.length} scenes ready from download`);
+            }).catch(() => { setIsProcessing(false); setShowProgress(false); setImportProgress(null); });
+          } else {
+            setIsProcessing(false);
+            setShowProgress(false);
+            setImportProgress(null);
+          }
+        } catch {
+          setIsProcessing(false);
+          setShowProgress(false);
+          setImportProgress(null);
+          toast.error("Scene detection failed, try reimporting");
+        }
+      } else {
+        toast.success("Download complete — file saved");
+      }
+    } catch (err: any) {
+      if (err?.message !== "cancelled") toast.error(`Download failed: ${err?.message || err}`);
+      setDlProgress(null);
+    }
+  };
 
   // Theme state
   const [savedTheme, setSavedTheme] = useState<ThemeId>(getStoredTheme);
@@ -868,13 +971,78 @@ export default function App() {
     <div className="w-full h-full flex flex-col gap-6 animate-in fade-in duration-200">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Downloads</h2>
-        <span className="text-sm text-muted-foreground">3 completed, 0 active</span>
+        <span className="text-sm text-muted-foreground">{dlInfo ? dlInfo.title : ""}</span>
       </div>
-      <div className="bg-card border border-border rounded-xl flex-1 p-6 flex flex-col items-center justify-center gap-4 text-muted-foreground">
-        <DownloadCloud className="w-12 h-12 opacity-30" />
-        <p className="text-sm font-medium">No download queue</p>
-        <p className="text-xs opacity-70">Exported files can be managed here in future releases</p>
+
+      {/* URL Input */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <h3 className="font-semibold text-sm flex items-center gap-2"><DownloadCloud className="w-4 h-4 text-primary" /> Download from URL</h3>
+        <div className="flex gap-2">
+          <input type="text" value={dlURL} onChange={e => setDlURL(e.target.value)} placeholder="Paste YouTube or video URL..."
+            className="h-10 flex-1 bg-input border border-border rounded-lg px-3 text-sm font-mono focus:outline-none focus:border-primary"
+            onKeyDown={e => e.key === "Enter" && handleFetchFormats()}
+          />
+          <button onClick={handleFetchFormats} disabled={dlLoading}
+            className="h-10 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+          >{dlLoading ? "Fetching..." : "Get Formats"}</button>
+        </div>
       </div>
+
+      {/* Format selection */}
+      {dlInfo && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">{dlInfo.title}</h3>
+            <button onClick={() => { setDlInfo(null); setDlURL(""); setDlFormat(""); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >Clear</button>
+          </div>
+          <div className="max-h-60 overflow-y-auto space-y-1 border border-border rounded-lg">
+            {dlInfo.formats.map((f: any, i: number) => (
+              <label key={i} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors text-sm ${dlFormat === f.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                <input type="radio" name="format" value={f.id} checked={dlFormat === f.id} onChange={() => setDlFormat(f.id)} className="accent-primary" />
+                <span className="font-mono text-xs w-16 shrink-0">{f.id}</span>
+                <span className="w-16 shrink-0 text-muted-foreground">{f.ext}</span>
+                <span className="w-20 shrink-0">{f.res}</span>
+                <span className="w-20 shrink-0 text-muted-foreground">{f.size}</span>
+                <span className="flex-1 text-muted-foreground text-xs truncate">{f.note}</span>
+              </label>
+            ))}
+          </div>
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <button onClick={() => handleDownload("import")}
+              className="flex-1 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+            ><Scissors className="w-4 h-4" /> Import & Cluster</button>
+            <button onClick={() => handleDownload("desktop")}
+              className="h-10 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium flex items-center justify-center gap-2"
+            ><FolderOpen className="w-4 h-4" /> Desktop</button>
+            <button onClick={() => handleDownload("pick")}
+              className="h-10 px-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium flex items-center justify-center gap-2"
+            ><FolderOpen className="w-4 h-4" /> Choose Folder</button>
+          </div>
+        </div>
+      )}
+
+      {/* Download progress */}
+      {dlProgress && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-primary font-mono font-bold">{dlProgress.pct}%</span>
+            <span className="text-muted-foreground text-xs">{dlProgress.stage}</span>
+          </div>
+          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-primary to-purple-400 rounded-full transition-all duration-200"
+              style={{ width: `${dlProgress.pct}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
+            {dlProgress.speed && <span>Speed: {dlProgress.speed}</span>}
+            {dlProgress.eta && <span>ETA: {dlProgress.eta}</span>}
+            {dlProgress.size && <span>Size: {dlProgress.size}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 

@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -530,17 +533,6 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	if len(scenes) == 0 {
 		scenes = []sceneResult{{TimeOffset: 0, ClusterNum: "0", ClipURL: ""}}
 	}
-
-	a.emitProgress(55, "Generating thumbnails...")
-
-	// Generate thumbnails using existing GenerateThumbnails logic
-	go func() {
-		offsets := make([]int, len(scenes))
-		for i, s := range scenes {
-			offsets[i] = s.TimeOffset
-		}
-		a.GenerateThumbnails(videoPath, offsets) // this emits progress 40-100%
-	}()
 
 	data, _ := json.Marshal(scenes)
 	return string(data), nil
@@ -1074,4 +1066,207 @@ func loadHistory() ([]ExportRecord, error) {
 		return []ExportRecord{}, nil
 	}
 	return records, nil
+}
+
+// ── yt-dlp Integration ──
+
+type DownloadProgressPayload struct {
+	Pct   int    `json:"pct"`
+	Speed string `json:"speed,omitempty"`
+	ETA   string `json:"eta,omitempty"`
+	Size  string `json:"size,omitempty"`
+	Stage string `json:"stage"`
+}
+
+func (a *App) emitDownloadProgress(pct int, speed, eta, size, stage string) {
+	runtime.EventsEmit(a.ctx, "download-progress", DownloadProgressPayload{
+		Pct: pct, Speed: speed, ETA: eta, Size: size, Stage: stage,
+	})
+}
+
+func findYTDLP() string {
+	if p, err := exec.LookPath("yt-dlp"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(home, "AppData", "Local", "fracture", "bin", "yt-dlp.exe"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "yt-dlp"
+}
+
+type VideoFormat struct {
+	ID      string `json:"id"`
+	Ext     string `json:"ext"`
+	Res     string `json:"res"`
+	Size    string `json:"size"`
+	Note    string `json:"note"`
+	Codec   string `json:"codec"`
+	Bitrate string `json:"bitrate,omitempty"`
+}
+
+type VideoInfo struct {
+	Title   string        `json:"title"`
+	URL     string        `json:"url"`
+	Formats []VideoFormat `json:"formats"`
+}
+
+func (a *App) GetVideoFormats(urlStr string) (string, error) {
+	bin := findYTDLP()
+	cmd := exec.Command(bin, "--no-download", "--dump-single-json", urlStr)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("yt-dlp failed: %w", err)
+	}
+	var raw struct {
+		Title   string `json:"title"`
+		Formats []struct {
+			FormatID   string  `json:"format_id"`
+			Ext        string  `json:"ext"`
+			Resolution string  `json:"resolution"`
+			Filesize   int64   `json:"filesize"`
+			FormatNote string  `json:"format_note"`
+			VCodec     string  `json:"vcodec"`
+			ACodec     string  `json:"acodec"`
+			TBR        float64 `json:"tbr"`
+		} `json:"formats"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return "", fmt.Errorf("parse failed: %w", err)
+	}
+	info := VideoInfo{Title: raw.Title, URL: urlStr, Formats: make([]VideoFormat, 0)}
+	for _, f := range raw.Formats {
+		res := f.Resolution
+		if res == "" {
+			res = "audio only"
+		}
+		size := ""
+		if f.Filesize > 0 {
+			size = fmt.Sprintf("%.1f MB", float64(f.Filesize)/1024/1024)
+		}
+		codec := f.VCodec
+		if codec == "none" {
+			codec = f.ACodec
+		}
+		br := ""
+		if f.TBR > 0 {
+			br = fmt.Sprintf("%.0f kbps", f.TBR)
+		}
+		note := f.FormatNote
+		if note == "" {
+			note = codec
+		}
+		info.Formats = append(info.Formats, VideoFormat{
+			ID: f.FormatID, Ext: f.Ext, Res: res, Size: size,
+			Note: note, Codec: codec, Bitrate: br,
+		})
+	}
+	sort.Slice(info.Formats, func(i, j int) bool {
+		// Parse size strings like "125.3 MB" for comparison
+		parseMB := func(s string) float64 {
+			if s == "" { return 0 }
+			var v float64
+			var unit string
+			fmt.Sscanf(s, "%f%s", &v, &unit)
+			if strings.Contains(unit, "GB") { return v * 1024 }
+			return v
+		}
+		return parseMB(info.Formats[i].Size) > parseMB(info.Formats[j].Size)
+	})
+	data, _ := json.Marshal(info)
+	return string(data), nil
+}
+
+func (a *App) DownloadVideo(urlStr, formatID, destType string) (string, error) {
+	bin := findYTDLP()
+	var saveDir string
+	if destType == "import" {
+		home, _ := os.UserHomeDir()
+		saveDir = filepath.Join(home, "AppData", "Local", "fracture", "media")
+		os.MkdirAll(saveDir, 0755)
+	} else if destType == "desktop" {
+		home, _ := os.UserHomeDir()
+		saveDir = filepath.Join(home, "Desktop")
+		os.MkdirAll(saveDir, 0755)
+	} else {
+		// "pick" — open folder picker dialog
+		dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+			Title: "Choose download location",
+		})
+		if err != nil || dir == "" {
+			return "", fmt.Errorf("cancelled")
+		}
+		saveDir = dir
+	}
+	a.emitDownloadProgress(0, "", "", "", "Starting download...")
+	outputTemplate := filepath.Join(saveDir, "%(title)s.%(ext)s")
+	args := []string{"--no-playlist", "--no-warnings", "-f", formatID, "-o", outputTemplate, "--newline", urlStr}
+
+	// Context with 15-min timeout so yt-dlp can't hang forever
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, args...)
+	stderr, _ := cmd.StderrPipe()
+	stdout, _ := cmd.StdoutPipe()
+
+	// Lenient progress regex: [download]  XX.X% of ~YY.YMiB at ZZ.ZMiB/s ETA 00:00
+	progRe := regexp.MustCompile(`\[download\]\s+([\d.]+)%.*?of\s+~?([\d.]+[KMGT]?i?B).*?(?:at\s+([\d.]+[KMGT]?i?B/s).*?ETA\s+(\S+)|in\s+(\S+))`)
+	progDone := make(chan struct{})
+	go func() {
+		defer close(progDone)
+		scanner := bufio.NewScanner(io.MultiReader(stderr, stdout))
+		scanner.Buffer(make([]byte, 64*1024), 256*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if m := progRe.FindStringSubmatch(line); len(m) > 4 {
+				pct, _ := strconv.ParseFloat(m[1], 64)
+				speed, eta := "", ""
+				if m[3] != "" {
+					speed = m[3]
+					eta = m[4]
+				}
+				a.emitDownloadProgress(int(pct), speed, eta, m[2], "Downloading...")
+			}
+		}
+	}()
+
+	if err := cmd.Start(); err != nil {
+		<-progDone
+		return "", fmt.Errorf("start failed: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		<-progDone
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("download timed out after 15 minutes")
+		}
+		return "", fmt.Errorf("download failed: %w", err)
+	}
+	<-progDone
+	a.emitDownloadProgress(100, "", "", "", "Complete")
+	var downloaded string
+	entries, _ := os.ReadDir(saveDir)
+	for _, e := range entries {
+		if !e.IsDir() {
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			if ext == ".mp4" || ext == ".mkv" || ext == ".webm" {
+				fullPath := filepath.Join(saveDir, e.Name())
+				if downloaded == "" {
+					downloaded = fullPath
+				}
+			}
+		}
+	}
+	if destType == "import" && downloaded != "" {
+		a.serverMu.Lock()
+		a.videoPath = downloaded
+		a.serverMu.Unlock()
+	}
+	return downloaded, nil
 }
