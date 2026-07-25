@@ -1,5 +1,5 @@
-7<p align="center">
-  <img src="assets/ascii-title.png" alt="Fracture ASCII Title" width="500">
+<p align="center">
+  <img src="assets/ascii-title.png" alt="Fracture ASCII Title" width="600">
 </p>
 
 Fast desktop scene-splitting software for editors.
