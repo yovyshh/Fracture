@@ -1,4 +1,4 @@
-<p align="center">
+7<p align="center">
   <img src="assets/ascii-title.png" alt="Fracture ASCII Title" width="500">
 </p>
 
@@ -145,6 +145,6 @@ Produces a standalone `.exe` in `build/bin/`.
 
 ## License
 
-Fracture is licensed under the GNU GPL v3.0.
+Fracture is licensed under the MIT License
 
 Any derivative work must also be open-source under the same license.
