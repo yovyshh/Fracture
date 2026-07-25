@@ -12,6 +12,7 @@ RequestExecutionLevel user
 !define PRODUCT_PUBLISHER "yovyshh"
 !define PRODUCT_WEB_SITE "https://github.com/yovyshh/Fracture"
 !define FFMPEG_URL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+!define YTDLP_URL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "Fracture-Installer.exe"
@@ -119,6 +120,30 @@ Section "Main Application" SEC01
       DetailPrint "FFmpeg extraction failed. You'll need to install it manually."
     ${EndIf}
   ${EndIf}
+
+
+  ; ── yt-dlp check & download ──
+  DetailPrint "Checking for yt-dlp..."
+  nsExec::ExecToStack '"$WINDIR\system32\where.exe" yt-dlp 2>nul'
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "yt-dlp found on system — skipping download."
+  ${Else}
+    IfFileExists "$INSTDIR\yt-dlp.exe" ytdlpDone downloadYtdlp
+  ${EndIf}
+
+  downloadYtdlp:
+  IfFileExists "$INSTDIR\yt-dlp.exe" ytdlpDone
+    DetailPrint "Downloading yt-dlp..."
+    NSISdl::download_quiet "${YTDLP_URL}" "$INSTDIR\yt-dlp.exe"
+    Pop $0
+    ${If} $0 == "success"
+      DetailPrint "yt-dlp installed successfully."
+    ${Else}
+      DetailPrint "yt-dlp download failed ($0). You may need to install it manually."
+    ${EndIf}
+  
+  ytdlpDone:
 
   ffmpegDone:
 

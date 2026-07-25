@@ -16,10 +16,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// newCmd creates an exec.Cmd with hidden console window (no cmd popup).
+func newCmd(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
+
+// newCmdContext creates a context-aware exec.Cmd with hidden console window.
+func newCmdContext(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
 
 type App struct {
 	ctx        context.Context
@@ -320,7 +335,7 @@ func (a *App) GenerateThumbnails(videoPath string, timeOffsets []int) (string, e
 			name := fmt.Sprintf("t_%d.jpg", off)
 			outPath := filepath.Join(dir, name)
 			// -ss before -i = fast keyframe seek; small scale for grid
-			cmd := exec.Command(findFFmpeg(),
+			cmd := newCmd(findFFmpeg(),
 				"-hide_banner", "-loglevel", "error",
 				"-ss", strconv.Itoa(off),
 				"-i", videoPath,
@@ -495,7 +510,7 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 	}
 	segmentArgs = append(segmentArgs, "-reset_timestamps", "1", outputPattern)
 
-	cmd := exec.Command(findFFmpeg(), segmentArgs...)
+	cmd := newCmd(findFFmpeg(), segmentArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "[]", fmt.Errorf("ffmpeg segment failed: %s: %s", err, string(out))
 	}
@@ -540,7 +555,7 @@ func (a *App) GetSceneClusters(videoPath string) (string, error) {
 
 // probeDuration returns seconds via ffprobe (fast, no decode).
 func probeDuration(videoPath string) float64 {
-	cmd := exec.Command(findFFprobe(),
+	cmd := newCmd(findFFprobe(),
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
@@ -560,7 +575,7 @@ func probeDuration(videoPath string) float64 {
 
 // probeKeyframeTimes reads packet flags only — no video decode (AMVerge packet path).
 func probeKeyframeTimes(videoPath string) []float64 {
-	cmd := exec.Command(findFFprobe(),
+	cmd := newCmd(findFFprobe(),
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "packet=pts_time,flags",
@@ -699,7 +714,7 @@ func abs(x int) int {
 
 // getFrameColor extracts average R/G/B from a single frame via 1×1 ffmpeg pixel.
 func getFrameColor(videoPath string, timeSec int) (float64, float64, float64, error) {
-	cmd := exec.Command(findFFmpeg(),
+	cmd := newCmd(findFFmpeg(),
 		"-hide_banner", "-loglevel", "error",
 		"-ss", strconv.Itoa(timeSec),
 		"-i", videoPath,
@@ -856,7 +871,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 
 			out := filepath.Join(workDir, fmt.Sprintf("clip_%04d.mp4", i))
 			// -ss before -i for fast seek; stream copy = no reencode
-			cmd := exec.Command(findFFmpeg(),
+			cmd := newCmd(findFFmpeg(),
 				"-hide_banner", "-loglevel", "error",
 				"-y",
 				"-ss", strconv.Itoa(seg.start),
@@ -870,7 +885,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 			)
 			if o, err := cmd.CombinedOutput(); err != nil {
 				// Fallback: light reencode if copy fails (codec/container edge cases)
-				cmd2 := exec.Command(findFFmpeg(),
+				cmd2 := newCmd(findFFmpeg(),
 					"-hide_banner", "-loglevel", "error",
 					"-y",
 					"-ss", strconv.Itoa(seg.start),
@@ -925,7 +940,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 	}
 
 	if len(ordered) == 1 {
-		cmd := exec.Command(findFFmpeg(), "-hide_banner", "-loglevel", "error",
+		cmd := newCmd(findFFmpeg(), "-hide_banner", "-loglevel", "error",
 			"-y", "-i", ordered[0], "-c", "copy", "-movflags", "+faststart", outputPath)
 		if o, err := cmd.CombinedOutput(); err != nil {
 			// plain file copy fallback
@@ -953,7 +968,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 		return "", err
 	}
 
-	concatCmd := exec.Command(findFFmpeg(),
+	concatCmd := newCmd(findFFmpeg(),
 		"-hide_banner", "-loglevel", "error",
 		"-y",
 		"-f", "concat",
@@ -983,7 +998,7 @@ func (a *App) ExportTimeline(videoPath string, timeOffsets []int, outputPath str
 			"-movflags", "+faststart",
 			outputPath,
 		)
-		cmd2 := exec.Command(findFFmpeg(), args...)
+		cmd2 := newCmd(findFFmpeg(), args...)
 		if o2, err2 := cmd2.CombinedOutput(); err2 != nil {
 			return "", fmt.Errorf("concat failed: %v / %v\n%s\n%s", err, err2, o, o2)
 		}
@@ -1047,7 +1062,7 @@ func (a *App) OpenConfigFolder() (string, error) {
 		return "", err
 	}
 
-	if err := exec.Command("explorer.exe", configDir).Start(); err != nil {
+	if err := newCmd("explorer.exe", configDir).Start(); err != nil {
 		return "", err
 	}
 
@@ -1166,7 +1181,7 @@ type VideoInfo struct {
 
 func (a *App) GetVideoFormats(urlStr string) (string, error) {
 	bin := findYTDLP()
-	cmd := exec.Command(bin, "--no-download", "--dump-single-json", urlStr)
+	cmd := newCmd(bin, "--no-download", "--dump-single-json", urlStr)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("yt-dlp failed: %w", err)
@@ -1259,7 +1274,7 @@ func (a *App) DownloadVideo(urlStr, formatID, destType string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := newCmdContext(ctx, bin, args...)
 	stderr, _ := cmd.StderrPipe()
 	stdout, _ := cmd.StdoutPipe()
 
