@@ -1,18 +1,22 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "fracture-ui",
-  "outputfilename": "fracture-ui",
+  "name": "Fracture",
+  "outputfilename": "Fracture",
   "frontend:install": "pnpm install",
   "frontend:dev:install": "pnpm install",
   "frontend:build": "pnpm run build",
   "frontend:dev:watcher": "pnpm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "You"
+    "name": "yovyshh",
+    "email": ""
   },
   "info": {
-    "productName": "fracture-ui",
-    "productVersion": "1.0.0"
+    "companyName": "yovyshh",
+    "productName": "Fracture",
+    "productVersion": "2.0.0",
+    "copyright": "Copyright © 2026 yovyshh",
+    "comments": "Fast desktop scene-splitting software for editors"
   },
   "wailsjsdir": "./frontend",
   "assetdir": "./frontend/dist",
