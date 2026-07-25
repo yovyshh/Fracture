@@ -1125,7 +1125,7 @@ export default function App() {
             <h3 className="font-semibold">Buy Me a Coffee</h3>
             <p className="text-xs text-muted-foreground mt-1">One-time support via Ko-fi</p>
           </div>
-          <button className="mt-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors">Support</button>
+          <button onClick={() => toast.info("Work in progress")} className="mt-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors">Support</button>
         </div>
         <div className="bg-card border border-border rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:border-primary/50 transition-colors cursor-pointer group">
           <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
@@ -1135,7 +1135,7 @@ export default function App() {
             <h3 className="font-semibold">Sponsor on GitHub</h3>
             <p className="text-xs text-muted-foreground mt-1">Recurring sponsorship</p>
           </div>
-          <button className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">Sponsor</button>
+          <button onClick={() => window.open("https://github.com/yovyshh/Fracture", "_blank")} className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">Sponsor</button>
         </div>
         <div className="bg-card border border-border rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:border-primary/50 transition-colors cursor-pointer group">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
@@ -1145,7 +1145,7 @@ export default function App() {
             <h3 className="font-semibold">Contribute</h3>
             <p className="text-xs text-muted-foreground mt-1">Open issues, PRs welcome</p>
           </div>
-          <button className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">View on GitHub</button>
+          <button onClick={() => window.open("https://github.com/yovyshh/Fracture", "_blank")} className="mt-2 px-4 py-2 bg-card border border-border text-sm rounded-lg hover:bg-muted transition-colors">View on GitHub</button>
         </div>
       </div>
     </div>
