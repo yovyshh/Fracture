@@ -1151,9 +1151,20 @@ func findYTDLP() string {
 	if p, err := exec.LookPath("yt-dlp"); err == nil {
 		return p
 	}
+	// Check app's own directory (where the installer places it)
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidate := filepath.Join(dir, "yt-dlp.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
 	home, _ := os.UserHomeDir()
 	candidates := []string{
 		filepath.Join(home, "AppData", "Local", "fracture", "bin", "yt-dlp.exe"),
+		filepath.Join(home, "AppData", "Local", "Programs", "Python", "Python312", "Scripts", "yt-dlp.exe"),
+		filepath.Join(home, "AppData", "Roaming", "npm", "yt-dlp.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Fracture", "yt-dlp.exe"),
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
