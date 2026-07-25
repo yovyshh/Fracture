@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Sidebar, type PageType } from './components/Sidebar';
-import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, Github, Heart, Coffee, Minus, Maximize, X, SlidersHorizontal, MousePointer2, LayoutGrid, Video } from 'lucide-react';
+import { Download, Save, RotateCcw, FolderOpen, Copy, Trash2, CheckCircle, FileVideo, DownloadCloud, Info, Layers, Scissors, Cpu, Network, Sun, Moon, Palette, Monitor, Github, Heart, Coffee, Minus, Maximize, X, SlidersHorizontal, MousePointer2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectVideo, ServeVideo, SelectSavePath, ExportTimeline, SaveExportRecord, GetHistory, GetSceneClusters, GenerateThumbnails, OpenConfigFolder, GetVideoFormats, DownloadVideo } from "../wailsjs/go/main/App";
 import { WindowMinimise, WindowToggleMaximise, Quit, EventsOn } from "../wailsjs/runtime/runtime";
@@ -1055,120 +1055,97 @@ export default function App() {
         </div>
         <div>
           <h2 className="text-3xl font-bold tracking-tight">About Fracture</h2>
-          <p className="text-sm text-muted-foreground">Fast, lossless scene splitting for editors</p>
+          <p className="text-sm text-muted-foreground">Intelligent video scene analysis &amp; organization</p>
         </div>
       </div>
 
       {/* Pitch */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Scissors className="w-4 h-4 text-primary" /> Tired of manually cutting scenes?</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          I hate scene selection. Do you hate scene selection? I'm guessing since you downloaded this app, the answer is yes.
-          Fracture gives you a faster way to skim through episodes and find the parts you actually want to edit.
+          Searching through hours of video footage to find a single moment is one of the most time-consuming parts of editing.
+          Whether you're working with episodes, movies, recorded streams, or long-form content, manually scrubbing through
+          timelines often wastes more time than the actual editing process.
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          There have been way too many times where I personally banged my head against the wall trying to find one specific
-          moment in a sea of footage. Now I don't have to deal with that nearly as much.
+          Fracture was built to eliminate that frustration. By automatically analyzing videos and organizing them into
+          visually searchable clips, the application helps you locate, review, and manage scenes in a fraction of the time.
+          Instead of endlessly scrolling through a timeline, you can browse meaningful previews, identify the moments you
+          need, and move directly into editing.
         </p>
       </div>
 
-      {/* Benefits */}
+      {/* Why Use Fracture */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Heart className="w-4 h-4 text-destructive" /> Benefits</h3>
+        <h3 className="font-semibold flex items-center gap-2"><Heart className="w-4 h-4 text-destructive" /> Why Use Fracture?</h3>
         <ul className="text-sm text-muted-foreground space-y-3 list-disc pl-5">
-          <li><strong className="text-foreground">Quick Skimming Through Footage:</strong> Having all the clips displayed in a grid lets you quickly see which scenes look good and which ones don't.</li>
-          <li><strong className="text-foreground">Finding Specific Scenes:</strong> Had a scene in mind but no clue where it was? This is one of the biggest reasons I built Fracture.</li>
-          <li><strong className="text-foreground">Zero Quality Loss:</strong> Clips are exported as a 1:1 stream copy — no re-encoding, no quality loss.</li>
-          <li><strong className="text-foreground">MP4 Output:</strong> Every exported clip is MP4. No more annoying MKV compatibility issues with your editor.</li>
-          <li><strong className="text-foreground">Auto-Clustering:</strong> DBSCAN groups visually similar scenes together. Black frames and white flashes are automatically filtered.</li>
+          <li><strong className="text-foreground">Save Time</strong> — Reduce hours spent manually searching through long videos. Keyframe detection completes in seconds without a full decode.</li>
+          <li><strong className="text-foreground">Visual Scene Discovery</strong> — Browse clips using thumbnails organized in an intelligently sorted grid, with colour-similarity clustering to group related scenes.</li>
+          <li><strong className="text-foreground">Organized Workflow</strong> — Keep imported videos, downloaded content, export history, and curated timelines neatly structured in one workspace.</li>
+          <li><strong className="text-foreground">Zero Quality Loss</strong> — All exports use stream copy (<code className="text-xs">-c copy</code>) — identical to the source, no re-encoding, no generation loss.</li>
+          <li><strong className="text-foreground">Built-in Downloads</strong> — Fetch videos directly from supported platforms via yt-dlp integration and process them without leaving the app.</li>
         </ul>
       </div>
 
-      {/* UI */}
+      {/* How It Works */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Monitor className="w-4 h-4 text-primary" /> UI Overview</h3>
-        <ul className="text-sm text-muted-foreground space-y-3 list-disc pl-5">
-          <li><strong className="text-foreground">Sidebar:</strong> Navigate between the main workspace, history, downloads, settings, and about pages.</li>
-          <li><strong className="text-foreground">Scene Grid:</strong> Your main workspace — all detected clips shown in a scrollable grid. Click a clip to preview it, hover to skim.</li>
-          <li><strong className="text-foreground">Timeline:</strong> Drag clips into the timeline to build a curated sequence, then export.</li>
-          <li><strong className="text-foreground">Downloads:</strong> Download videos from YouTube or other sites directly into the app for immediate splitting.</li>
-          <li><strong className="text-foreground">Settings:</strong> Customize themes, fonts, export paths, and processing options.</li>
-        </ul>
-      </div>
-
-      {/* Workflow */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" /> Recommended Workflow</h3>
+        <h3 className="font-semibold flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" /> How It Works</h3>
         <ol className="text-sm text-muted-foreground space-y-3 list-decimal pl-5">
-          <li><strong className="text-foreground">Import:</strong> Open a video or paste a URL. Fracture scans keyframes in seconds — no full decode.</li>
-          <li><strong className="text-foreground">Browse:</strong> Skim through clips and grab anything that looks useful. Don't overthink it early on.</li>
-          <li><strong className="text-foreground">Curate & Export:</strong> Arrange clips in the timeline, merge adjacent scenes if needed, then export. All stream-copied, zero quality loss.</li>
+          <li><strong className="text-foreground">Import Your Video</strong> — Load a local file or paste a URL. Fracture supports MP4, MKV, WEBM, and anything FFmpeg can read.</li>
+          <li><strong className="text-foreground">Intelligent Processing</strong> — ffprobe scans keyframe packet flags (no full-video decode). Average colour is extracted per keyframe, then DBSCAN clusters visually similar scenes. Black and white frames are filtered as noise.</li>
+          <li><strong className="text-foreground">Scene Splitting</strong> — The video is split into individual scene files using FFmpeg's segment muxer with stream copy. Each scene becomes a standalone, playable clip.</li>
+          <li><strong className="text-foreground">Browse &amp; Select</strong> — Review scenes in an organized grid. Hover to preview instantly, click to load a clip in the preview panel, or add to the timeline for export.</li>
+          <li><strong className="text-foreground">Export</strong> — Export your curated timeline as individual clips or a merged sequence. All output uses stream copy — no quality loss, no re-encoding.</li>
         </ol>
-        <p className="text-sm text-muted-foreground italic">
-          This is the workflow I personally use, but Fracture is flexible enough to fit however you like to edit.
-        </p>
+      </div>
+
+      {/* Main Interface */}
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><Monitor className="w-4 h-4 text-primary" /> Interface Overview</h3>
+        <ul className="text-sm text-muted-foreground space-y-3 list-disc pl-5">
+          <li><strong className="text-foreground">Home (Workspace)</strong> — Your primary area where detected clips are displayed in a scrollable grid alongside the timeline and preview panel.</li>
+          <li><strong className="text-foreground">Downloads</strong> — Paste a video URL, fetch available formats sorted by file size, and download directly into your project or to your desktop. Integrated yt-dlp with live progress, speed, and ETA.</li>
+          <li><strong className="text-foreground">History</strong> — View all past exports with timestamps, file paths, and clip counts.</li>
+          <li><strong className="text-foreground">Settings</strong> — Customize appearance (four themes, font selection), configure export paths, processing parameters (EPS, minimum samples, GPU acceleration), and storage options.</li>
+          <li><strong className="text-foreground">Activity Log</strong> — Real-time progress indicators for import processing, scene detection, thumbnail generation, and download operations.</li>
+        </ul>
       </div>
 
       {/* Selecting Clips */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
         <h3 className="font-semibold flex items-center gap-2"><MousePointer2 className="w-4 h-4 text-primary" /> Selecting Clips</h3>
         <ul className="text-sm text-muted-foreground space-y-3 list-disc pl-5">
-          <li><strong className="text-foreground">Click:</strong> Focus a clip and load it into the preview panel.</li>
-          <li><strong className="text-foreground">Click + Add to Timeline:</strong> Select a clip and add it to your curated export list.</li>
-          <li><strong className="text-foreground">Hover:</strong> Preview a clip by hovering over its thumbnail.</li>
+          <li><strong className="text-foreground">Click</strong> — Focus a clip and load it into the preview panel.</li>
+          <li><strong className="text-foreground">Add to Timeline</strong> — Select clips to build a curated sequence for export.</li>
+          <li><strong className="text-foreground">Hover</strong> — Preview a clip instantly by hovering over its thumbnail.</li>
+          <li><strong className="text-foreground">Filter by Cluster</strong> — Use the cluster dropdown to show only scenes from a specific colour-similarity group.</li>
         </ul>
         <p className="text-sm text-muted-foreground">
-          Only clips added to the timeline will be exported.
+          Only clips added to the timeline are included during export.
         </p>
       </div>
 
-      {/* Grid Preview */}
+      {/* Performance */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><LayoutGrid className="w-4 h-4 text-primary" /> Preview Panel</h3>
+        <h3 className="font-semibold flex items-center gap-2"><SlidersHorizontal className="w-4 h-4 text-primary" /> Performance &amp; Caching</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Turn on the preview panel to skim clips as you browse the grid. It's great for quickly scanning large episodes.
+          Scene analysis typically completes in 1&ndash;5 seconds. Generated thumbnails are cached in a temporary directory
+          and cleaned up when the application shuts down. Imported videos are referenced in-place &mdash; Fracture never
+          duplicates or modifies your original files.
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          <strong>Tip:</strong> If too many clips are visible at once and things feel slow, increase the grid size or reduce the scene count.
+          For large files, video streaming uses HTTP range requests so previews start instantly without waiting for a full
+          load. If your system supports hardware decoding, the embedded WebView2 runtime handles video playback efficiently.
         </p>
       </div>
 
-      {/* HEVC Support */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Video className="w-4 h-4 text-primary" /> Codec Support</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Fracture works with any codec that FFmpeg supports. Previews use JPEG thumbnails for speed.
-          HEVC (H.265) files work great — previews are generated from keyframes so there's no slow decode.
-        </p>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          <strong>Recommendation:</strong> For the smoothest experience with HEVC files, install the Microsoft HEVC extension.
-        </p>
-      </div>
-
-      {/* Split Mechanics */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><Scissors className="w-4 h-4 text-primary" /> How Fracture Splits Videos</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Fracture uses ffprobe to read <strong>packet flags</strong> in the video container — no full decode needed.
-          It finds every keyframe (I-frame) boundary, then:
-        </p>
-        <ol className="text-sm text-muted-foreground space-y-2 list-decimal pl-5">
-          <li>Extracts the <strong>average colour</strong> at each keyframe (1×1 pixel via ffmpeg).</li>
-          <li>Runs <strong>DBSCAN</strong> on those colour features to cluster visually similar scenes.</li>
-          <li><strong>Filters black/white</strong> frames as noise.</li>
-          <li>Splits the video via ffmpeg's <strong>segment muxer</strong> (<code>-c copy</code>) — individual scene files, zero quality loss.</li>
-          <li>Generates <strong>JPEG thumbnails</strong> in parallel for the grid.</li>
-        </ol>
-        <p className="text-sm text-muted-foreground text-xs mt-2">
-          The whole process typically takes 1–5 seconds before you're browsing clips.
-        </p>
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-border pt-6 text-center">
+      {/* About section at bottom */}
+      <div className="border-t border-border pt-6 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Fracture &middot; MIT License &middot; Built with Wails, Go, React &amp; FFmpeg
+          Fracture &middot; Built with Wails v2, Go, React, TypeScript &amp; FFmpeg
         </p>
+        <a onClick={() => window.open("https://github.com/yovyshh/Fracture", "_blank")}
+          className="text-xs text-primary hover:underline cursor-pointer"
+        >View on GitHub</a>
       </div>
     </div>
   );
