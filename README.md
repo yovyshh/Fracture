@@ -1,40 +1,39 @@
-                        +------------------------------------------------------------------------------+
-                       |@@@@@@@@  @@@@@@@    @@@@@@    @@@@@@@  @@@@@@@  @@@  @@@  @@@@@@@   @@@@@@@@ |
-                       |@@@@@@@@  @@@@@@@@  @@@@@@@@  @@@@@@@@  @@@@@@@  @@@  @@@  @@@@@@@@  @@@@@@@@ |
-                       |@@!       @@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@  @@!  @@@  @@!      |
-                       |!@!       !@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@  !@!  @!@  !@!      |
-                       |@!!!:!    @!@!!@!   @!@!@!@!  !@!         @!!    @!@  !@!  @!@!!@!   @!!!:!   |
-                       |!!!!!:    !!@!@!    !!!@!!!!  !!!         !!!    !@!  !!!  !!@!@!    !!!!!:   |
-                       |!!:       !!: :!!   !!:  !!!  :!!         !!:    !!:  !!!  !!: :!!   !!:      |
-                       |:!:       :!:  !:!  :!:  !:!  :!:         :!:    :!:  !:!  :!:  !:!  :!:      |
-                       | ::       ::   :::  ::   :::   ::: :::     ::    ::::: ::  ::   :::   :: :::: |
-                       | :         :   : :   :   : :   :: :: :     :      : :  :    :   : :  : :: ::  |
-                       +------------------------------------------------------------------------------+
+<p align="center">
+  <img src="assets/ascii-title.png" alt="Fracture ASCII Title" width="500">
+</p>
+
 Fast desktop scene-splitting software for editors.
 
-Fracture helps editors turn long videos into usable clips quickly. Import a video, split it into scenes, preview results instantly, curate your timeline, and export only what you want — all lossless, all local.
+Fracture helps editors turn long videos into usable clips quickly. Import a video, split it into scenes, preview each clip individually, curate your timeline, and export only what you want — all lossless, all local.
 
 ## Features
 
-- **Fast keyframe-based scene splitting** — ffprobe packet scan, sub-second detection
-- **Instant clip previewing** — hover any thumbnail to seek the main player
-- **Smart scene clustering** — group detected scenes by visual similarity
+- **Physical scene splitting** — ffmpeg segment muxer splits video into individual `.mp4` scene files (stream copy, no re-encode)
+- **DBSCAN clustering** — groups visually similar scenes by RGB colour analysis (eps=45, minPts=2)
+- **Black/white frame removal** — auto-detected and marked as Noise cluster
+- **Per-clip preview** — click any scene tile to load its individual clip in the preview panel
+- **Hover preview** — hover a scene thumbnail to seek the preview video to that timestamp
+- **Collapsible preview panel** — toggleable, shows time badge, dismissable
 - **Lossless MP4 export** — stream-copy (`-c copy`) concatenation, no quality loss
 - **Multi-theme support** — Moonlight, Amethyst, Frost, Ember with instant switching
 - **Customizable font picker** — JetBrains Mono, Fira Code, Inter, SF Mono
 - **Export history** — browse and re-access past exports
-- **HEVC / H.264 support** — depends on system codecs
 - **Settings panel** — clustering, hardware, and export preferences
-- **Resizable Wails-native interface** — glassmorphic title bar, sidebar navigation
+- **Frameless Wails-native window** — custom window controls (minimize, maximize, close)
+- **Import progress bar** — 0→100% with real-time stage tracking via Wails events
 
 ## How It Works
 
 ```
 Frontend (React + TypeScript + Tailwind)
           ↓
-Desktop Layer (Wails v2 + Go)
+Desktop Layer (Wails v2 + Go — frameless, HTTP media server)
           ↓
-FFprobe / FFmpeg
+FFprobe (keyframes) → GetFrameColor (RGB) → DBSCAN (clustering)
+          ↓
+FFmpeg segment muxer (physical split into scene .mp4 files)
+          ↓
+FFmpeg (parallel thumbnail generation)
 ```
 
 ### Frontend
@@ -42,51 +41,54 @@ FFprobe / FFmpeg
 Handles:
 
 - importing videos
-- previewing clips
-- scene grid display
-- timeline curation
-- settings & themes
+- per-clip preview panel (toggleable)
+- scene grid with cluster filter buttons
+- timeline curation (drag-select + export)
+- settings, themes, font picker
 - export history
 
 ### Go Backend
 
 Handles:
 
-- keyframe extraction via ffprobe
-- HTTP Range video streaming
-- thumbnail generation (parallel FFmpeg JPEGs)
-- lossless stream-copy export
+- keyframe extraction via ffprobe packet scan (sub-second)
+- per-frame colour extraction (1×1 ffmpeg pixel → RGB feature vectors)
+- DBSCAN clustering on RGB features
+- black/white frame detection (threshold-based)
+- physical video splitting via ffmpeg segment muxer (`-f segment`)
+- HTTP Range video / clip / thumbnail streaming
+- lossless stream-copy MP4 export
 - file system operations
 
-### Why Keyframes?
+### Why Keyframes + Segment Split?
 
 Older scene detection used frame-by-frame analysis or full-decode brightness probes.
 
-The current version uses ffprobe keyframe packet scan because it is:
+The current version uses ffprobe keyframe packet scan + ffmpeg segment split:
 
 - **much faster** — seconds instead of minutes
-- **simpler** — no full decode needed
-- **practical for real editors** — instant feedback on import
-- **lossless export** — no re-encode penalty
-- **easy to correct** — merge tools and timeline curation afterward
+- **individual scene files** — each scene is its own playable `.mp4`
+- **lossless splitting** — `-c:v copy` preserves original quality
+- **colour-based clustering** — DBSCAN on RGB values groups visually similar scenes
+- **noise filtering** — black/white frames flagged for easy removal
 
 ## Repository Structure
 
 ```
 fracture-ui/
 │
-├── app.go                  # Go backend (keyframes, video server, export)
-├── main.go                 # Application entry point
+├── app.go                  # Go backend (keyframes, colour analysis, DBSCAN, segment split, streaming, export)
+├── main.go                 # Application entry point (frameless window config)
 ├── wails.json              # Wails configuration
 ├── go.mod / go.sum         # Go module
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx         # Main React component (all pages)
+│   │   ├── App.tsx         # Main React component (all pages + preview panel)
 │   │   ├── main.tsx        # Vite entry point
 │   │   ├── index.css       # Tailwind + theme CSS variables
 │   │   └── components/
-│   │       ├── TitleBar.tsx # Draggable title bar + window controls
+│   │       ├── TitleBar.tsx # (unused — frameless mode uses floating controls)
 │   │       └── Sidebar.tsx  # Side navigation
 │   ├── package.json
 │   └── ...
@@ -119,7 +121,7 @@ cd fracture-ui
 wails dev
 ```
 
-Opens a native window with hot-reload on both Go and frontend changes.
+Opens a native frameless window with hot-reload on both Go and frontend changes.
 
 ### Build Desktop App
 
@@ -131,15 +133,14 @@ Produces a standalone `.exe` in `build/bin/`.
 
 ## Current Focus
 
+- CLIP embeddings for semantic scene clustering (replace RGB proxy)
+- HDBSCAN for truly automatic cluster count
 - More export formats (MKV, WebM, GIF)
 - Preserve original codec/settings by default
 - Quality slider for export bitrate
 - Hover audio playback (toggleable)
 - Clip timestamps shown under grid clips
 - Original aspect ratio clip cells
-- Better merge-export stability
-- Performance optimization for heavy exports
-- Combine clips into one compilation
 - Linux / macOS support
 
 ## License
