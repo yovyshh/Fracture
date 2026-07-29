@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows
+    name: Build Windows Installer
     runs-on: windows-latest
     permissions:
       contents: write
@@ -41,7 +41,40 @@ jobs:
       - name: Build application
         run: wails build -clean -ldflags="-H windowsgui"
 
-      - name: Upload artifact
+      - name: Download yt-dlp
+        run: |
+          curl -fSL -o build/windows/installer/embed/yt-dlp.exe `
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+        shell: pwsh
+
+      - name: Download ffmpeg and ffprobe
+        run: |
+          curl -fSL -o ffmpeg-release.7z `
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z"
+          7z x ffmpeg-release.7z -offmpeg-temp > $null
+          # Find and copy ffmpeg.exe and ffprobe.exe
+          Copy-Item (Get-ChildItem -Recurse -Filter "ffmpeg.exe" ffmpeg-temp).FullName `
+            "build/windows/installer/embed/ffmpeg.exe"
+          Copy-Item (Get-ChildItem -Recurse -Filter "ffprobe.exe" ffmpeg-temp).FullName `
+            "build/windows/installer/embed/ffprobe.exe"
+          Remove-Item -Recurse -Force ffmpeg-release.7z, ffmpeg-temp
+        shell: pwsh
+
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+
+      - name: Build NSIS installer
+        working-directory: build/windows/installer
+        run: makensis installer.nsi
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fracture-installer
+          path: build/windows/installer/Fracture-Installer.exe
+          retention-days: 7
+
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: fracture-portable
@@ -56,14 +89,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Get version
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Download artifact
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fracture-installer
+          path: artifacts
+
+      - name: Download portable artifact
         uses: actions/download-artifact@v4
         with:
           name: fracture-portable
@@ -76,4 +112,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
+            artifacts/Fracture-Installer.exe
             artifacts/Fracture.exe

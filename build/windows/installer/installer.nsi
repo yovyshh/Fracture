@@ -77,16 +77,18 @@ Section "Main Application" SEC01
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
     "NoRepair" 1
 
-  ; Add install dir to user PATH (so ffmpeg/yt-dlp are available from command line)
+  ; Add install dir to user PATH (so ffmpeg/ffprobe/yt-dlp are available from command line)
+  ; Read current user PATH, prepend our directory, write back as REG_SZ
   ReadRegStr $0 HKCU "Environment" "PATH"
   ${If} $0 != ""
     StrCpy $0 "$INSTDIR;$0"
   ${Else}
     StrCpy $0 "$INSTDIR"
   ${EndIf}
-  WriteRegExpandStr HKCU "Environment" "PATH" "$0"
-  DetailPrint "Added Fracture to system PATH."
-  SendMessage 0xFFFF 0x001A 0 "" /TIMEOUT=500
+  WriteRegStr HKCU "Environment" "PATH" "$0"
+  DetailPrint "Added Fracture install dir to user PATH."
+  ; Broadcast WM_SETTINGCHANGE so running processes pick up the PATH change
+  SendMessage 0xFFFF 0x001A 0 "Environment" /TIMEOUT=500
 
 SectionEnd
 
@@ -113,26 +115,45 @@ Section "Uninstall"
   RMDir /r "$APPDATA\Fracture"
   RMDir /r "$APPDATA\fracture"
 
-  ; Remove Fracture from PATH
-  ReadRegStr $0 HKCU "Environment" "PATH"
-  ${If} $0 != ""
-    StrCpy $1 $INSTDIR
-    StrLen $2 $1
-    StrCpy $3 $0
-    StrLen $4 $3
-    ${If} $3 == $1
-      StrCpy $0 ""
-    ${Else}
-      StrCpy $5 $3 1
-      ${If} $5 == ";"
-        StrCpy $3 $3 $4 1
+  ; Remove Fracture from PATH — remove our INSTDIR entry (with or without trailing backslash)
+  ReadRegStr $R0 HKCU "Environment" "PATH"
+  ${If} $R0 != ""
+    ; Normalize: ensure INSTDIR ends with \ for matching
+    StrCpy $R1 "$INSTDIR\"
+    StrLen $R2 $R1
+    ; Remove INSTDIR\ entry
+    ${Do}
+      StrCpy $R3 $R0 $R2
+      ${If} $R3 == $R1
+        ; Found it at the start — remove prefix including trailing ;
+        StrCpy $R0 $R0 "" $R2
+        ${If} $R0 == ";"
+          StrCpy $R0 ""
+        ${ElseIf} $R0 != ""
+          StrCpy $R0 $R0 "" 1
+        ${EndIf}
+        ${ExitDo}
       ${EndIf}
-      ${If} $3 != ""
-        StrCpy $0 "$3"
+      ; Check if INSTDIR\ appears after a ;
+      StrCpy $R4 $R0 1
+      ${If} $R4 == ";"
+        StrCpy $R5 $R0 "" 1
+        StrCpy $R4 $R5 $R2
+        ${If} $R4 == $R1
+          StrCpy $R0 $R5 "" $R2
+          ${If} $R0 == ";"
+            StrCpy $R0 ""
+          ${ElseIf} $R0 != ""
+            StrCpy $R0 $R0 "" 1
+          ${EndIf}
+          ${ExitDo}
+        ${EndIf}
       ${EndIf}
-    ${EndIf}
-    WriteRegExpandStr HKCU "Environment" "PATH" "$0"
-    SendMessage 0xFFFF 0x001A 0 "" /TIMEOUT=500
+      ; Move one char forward
+      StrCpy $R0 $R0 "" 1
+    ${LoopUntil} $R0 == ""
+    WriteRegStr HKCU "Environment" "PATH" "$R0"
+    SendMessage 0xFFFF 0x001A 0 "Environment" /TIMEOUT=500
   ${EndIf}
 
   DeleteRegKey HKCU "Software\${PRODUCT_NAME}"

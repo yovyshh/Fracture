@@ -1104,10 +1104,11 @@ func findFFprobe() string {
 	return "ffprobe"
 }
 func findYTDLP() string {
+	// 1. Check PATH
 	if p, err := exec.LookPath("yt-dlp"); err == nil {
 		return p
 	}
-	// Check app's own directory (where the installer places it)
+	// 2. Check app's own directory (installer puts yt-dlp.exe alongside Fracture.exe)
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		candidate := filepath.Join(dir, "yt-dlp.exe")
@@ -1115,18 +1116,26 @@ func findYTDLP() string {
 			return candidate
 		}
 	}
+	// 3. Check the standard Fracture install directory
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		candidate := filepath.Join(localAppData, "Fracture", "yt-dlp.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	// 4. Broader fallback search for common locations
 	home, _ := os.UserHomeDir()
-	candidates := []string{
+	fallback := []string{
 		filepath.Join(home, "AppData", "Local", "fracture", "bin", "yt-dlp.exe"),
 		filepath.Join(home, "AppData", "Local", "Programs", "Python", "Python312", "Scripts", "yt-dlp.exe"),
 		filepath.Join(home, "AppData", "Roaming", "npm", "yt-dlp.exe"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Fracture", "yt-dlp.exe"),
 	}
-	for _, c := range candidates {
+	for _, c := range fallback {
 		if _, err := os.Stat(c); err == nil {
 			return c
 		}
 	}
+	// 5. Last resort — let the OS try PATH (will fail with a clear error)
 	return "yt-dlp"
 }
 
