@@ -65,7 +65,18 @@ jobs:
 
       - name: Build NSIS installer
         working-directory: build/windows/installer
-        run: makensis installer.nsi
+        run: |
+          # makensis.exe may not be in PowerShell PATH — use full path or cmd
+          if (Get-Command "makensis" -ErrorAction SilentlyContinue) {
+            makensis installer.nsi
+          } else {
+            & "$env:ProgramFiles\NSIS\makensis.exe" installer.nsi
+            if ($LASTEXITCODE -ne 0) {
+              # fallback to x86 path
+              & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" installer.nsi
+            }
+          }
+        shell: pwsh
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
