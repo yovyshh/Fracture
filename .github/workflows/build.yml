@@ -65,18 +65,10 @@ jobs:
 
       - name: Build NSIS installer
         working-directory: build/windows/installer
+        # Use cmd.exe because PowerShell can't resolve the (x86) path consistently
         run: |
-          # makensis.exe may not be in PowerShell PATH — use full path or cmd
-          if (Get-Command "makensis" -ErrorAction SilentlyContinue) {
-            makensis installer.nsi
-          } else {
-            & "$env:ProgramFiles\NSIS\makensis.exe" installer.nsi
-            if ($LASTEXITCODE -ne 0) {
-              # fallback to x86 path
-              & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" installer.nsi
-            }
-          }
-        shell: pwsh
+          "%ProgramFiles(x86)%\NSIS\makensis.exe" installer.nsi
+        shell: cmd
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
