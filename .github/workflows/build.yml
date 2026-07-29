@@ -63,6 +63,12 @@ jobs:
       - name: Install NSIS
         run: choco install nsis --no-progress -y
 
+      - name: Download WebView2 bootstrapper
+        run: |
+          curl -fSL -o build/windows/installer/tmp/MicrosoftEdgeWebview2Setup.exe `
+            "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+        shell: pwsh
+
       - name: Build NSIS installer
         working-directory: build/windows/installer
         # Use cmd.exe because PowerShell can't resolve the (x86) path consistently
