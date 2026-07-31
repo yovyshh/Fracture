@@ -42,6 +42,25 @@ Section "Main Application" SEC01
   SetOutPath "$INSTDIR"
   SetOverwrite on
 
+  ; ── WebView2 Runtime (required by Wails UI) ──
+  DetailPrint "Checking WebView2 Runtime..."
+  SetRegView 64
+  ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${EndIf}
+  ${If} $0 == ""
+    DetailPrint "Installing: WebView2 Runtime..."
+    SetDetailsPrint listonly
+    InitPluginsDir
+    SetOutPath "$pluginsdir\webview2"
+    File "tmp\MicrosoftEdgeWebview2Setup.exe"
+    ExecWait '"$pluginsdir\webview2\MicrosoftEdgeWebview2Setup.exe" /silent /install'
+    SetDetailsPrint both
+  ${Else}
+    DetailPrint "WebView2 Runtime already installed."
+  ${EndIf}
+
   ; Fracture app
   File "..\..\bin\Fracture.exe"
 
