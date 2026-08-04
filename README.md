@@ -4,23 +4,22 @@
 
 Fast desktop scene-splitting software for editors.
 
-Fracture helps editors turn long videos into usable clips quickly. Import a video, split it into scenes, preview each clip individually, curate your timeline, and export only what you want — all lossless, all local.
+Fracture turns long videos into usable clips in seconds. Import, detect scenes via DBSCAN colour clustering, preview each clip individually, curate your timeline, and export losslessly. Built-in yt-dlp integration fetches videos from any supported platform directly into your project.
 
 ## Features
 
-- **Physical scene splitting** — ffmpeg segment muxer splits video into individual `.mp4` scene files (stream copy, no re-encode)
-- **DBSCAN clustering** — groups visually similar scenes by RGB colour analysis (eps=45, minPts=2)
-- **Black/white frame removal** — auto-detected and marked as Noise cluster
-- **Per-clip preview** — click any scene tile to load its individual clip in the preview panel
-- **Hover preview** — hover a scene thumbnail to seek the preview video to that timestamp
-- **Collapsible preview panel** — toggleable, shows time badge, dismissable
-- **Lossless MP4 export** — stream-copy (`-c copy`) concatenation, no quality loss
-- **Multi-theme support** — Moonlight, Amethyst, Frost, Ember with instant switching
-- **Customizable font picker** — JetBrains Mono, Fira Code, Inter, SF Mono
+- **Scene detection** — ffprobe keyframes + DBSCAN (eps=45, minPts=2) on RGB colour features — sub-second on typical videos
+- **Per-clip preview** — click any scene tile to load its individual clip; hover to seek the preview video
+- **Lossless export** — stream-copy (`-c copy`) concatenation, zero quality loss
+- **Built-in downloads** — yt-dlp integration: paste a URL, browse available formats sorted by file size, download with live progress/speed/ETA
+- **Physical scene files** — ffmpeg segment muxer splits video into playable `.mp4` files (stream copy, no re-encode)
+- **Black/white frame filtering** — auto-detected and marked as Noise cluster for easy removal
+- **Download to import** — downloaded videos auto-import with scene detection and thumbnail generation
+- **4 themes** — Moonlight, Amethyst, Frost, Ember with instant switching
+- **Custom font picker** — JetBrains Mono, Fira Code, Inter, SF Mono
 - **Export history** — browse and re-access past exports
-- **Settings panel** — clustering, hardware, and export preferences
-- **Frameless Wails-native window** — custom window controls (minimize, maximize, close)
-- **Import progress bar** — 0→100% with real-time stage tracking via Wails events
+- **Frameless window** — Wails-native with floating top-right controls (opacity-40, hover-reveal)
+- **Full NSIS installer** — self-contained `.exe` with ffmpeg, ffprobe, yt-dlp, and WebView2 bootstrapper
 
 ## How It Works
 
@@ -29,20 +28,23 @@ Frontend (React + TypeScript + Tailwind)
           ↓
 Desktop Layer (Wails v2 + Go — frameless, HTTP media server)
           ↓
-FFprobe (keyframes) → GetFrameColor (RGB) → DBSCAN (clustering)
+ffprobe (keyframes) → GetFrameColor (RGB) → DBSCAN (clustering)
           ↓
-FFmpeg segment muxer (physical split into scene .mp4 files)
+ffmpeg segment muxer (physical split into scene .mp4 files)
           ↓
-FFmpeg (parallel thumbnail generation)
+ffmpeg (parallel thumbnail generation)
+          ↓
+yt-dlp (video download from URLs)
 ```
 
 ### Frontend
 
 Handles:
 
-- importing videos
-- per-clip preview panel (toggleable)
+- video import with progress tracking
 - scene grid with cluster filter buttons
+- per-clip preview panel (toggleable, seek-on-hover)
+- download form with format browsing and destination picker
 - timeline curation (drag-select + export)
 - settings, themes, font picker
 - export history
@@ -57,6 +59,7 @@ Handles:
 - black/white frame detection (threshold-based)
 - physical video splitting via ffmpeg segment muxer (`-f segment`)
 - HTTP Range video / clip / thumbnail streaming
+- yt-dlp subprocess orchestration (format listing, download with live progress events, timeout handling)
 - lossless stream-copy MP4 export
 - file system operations
 
@@ -68,7 +71,7 @@ The current version uses ffprobe keyframe packet scan + ffmpeg segment split:
 
 - **much faster** — seconds instead of minutes
 - **individual scene files** — each scene is its own playable `.mp4`
-- **lossless splitting** — `-c:v copy` preserves original quality
+- **lossless splitting** — `-c copy` preserves original quality
 - **colour-based clustering** — DBSCAN on RGB values groups visually similar scenes
 - **noise filtering** — black/white frames flagged for easy removal
 
@@ -77,7 +80,7 @@ The current version uses ffprobe keyframe packet scan + ffmpeg segment split:
 ```
 fracture-ui/
 │
-├── app.go                  # Go backend (keyframes, colour analysis, DBSCAN, segment split, streaming, export)
+├── app.go                  # Go backend (keyframes, colour analysis, DBSCAN, segment split, yt-dlp, streaming, export)
 ├── main.go                 # Application entry point (frameless window config)
 ├── wails.json              # Wails configuration
 ├── go.mod / go.sum         # Go module
@@ -88,15 +91,22 @@ fracture-ui/
 │   │   ├── main.tsx        # Vite entry point
 │   │   ├── index.css       # Tailwind + theme CSS variables
 │   │   └── components/
-│   │       ├── TitleBar.tsx # (unused — frameless mode uses floating controls)
-│   │       └── Sidebar.tsx  # Side navigation
+│   │       ├── TitleBar.tsx
+│   │       └── Sidebar.tsx
 │   ├── package.json
 │   └── ...
 │
 ├── build/
-│   ├── appicon.png         # App icon
+│   ├── appicon.png
 │   └── windows/
-│       └── icon.ico        # Windows icon
+│       ├── icon.ico
+│       ├── download_embed.bat      # Download ffmpeg/yt-dlp for local installer builds
+│       └── installer/
+│           ├── installer.nsi       # NSIS installer script (embeds all deps)
+│           └── embed/              # Embedded binaries (downloaded by CI or script)
+│
+├── .github/workflows/
+│   └── build.yml           # CI: build Wails app, download deps, NSIS installer, GitHub release
 │
 └── README.md
 ```
@@ -105,13 +115,14 @@ fracture-ui/
 
 ### Requirements
 
-Install:
-
-- **Go** 1.21+
-- **Node.js** 18+ + pnpm
-- **Wails** v2 CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-- **FFmpeg** / **FFprobe** (on PATH)
-- **Windows** (current main target)
+| Tool | Version | Notes |
+|------|---------|-------|
+| **Go** | 1.21+ | |
+| **Node.js** | 18+ | + pnpm |
+| **Wails** | v2 | `go install github.com/wailsapp/wails/v2/cmd/wails@latest` |
+| **ffmpeg / ffprobe** | 4.0+ | On PATH for dev; bundled in installer for users |
+| **yt-dlp** | latest | On PATH for dev; bundled in installer for users |
+| **Windows** | 10+ | Current main target |
 
 ### Dev Mode
 
@@ -121,7 +132,7 @@ cd fracture-ui
 wails dev
 ```
 
-Opens a native frameless window with hot-reload on both Go and frontend changes.
+Opens a native frameless window with hot-reload on Go and frontend changes.
 
 ### Build Desktop App
 
@@ -130,6 +141,19 @@ wails build
 ```
 
 Produces a standalone `.exe` in `build/bin/`.
+
+### Build Installer (Windows)
+
+```bash
+# Download embed dependencies (one-time)
+build\windows\download_embed.bat
+
+# Build the NSIS installer
+cd build\windows\installer
+makensis installer.nsi    # requires NSIS installed (choco install nsis)
+```
+
+Produces `Fracture-Installer.exe` — a self-contained installer with ffmpeg, ffprobe, yt-dlp, and WebView2 bootstrapper.
 
 ## Current Focus
 
